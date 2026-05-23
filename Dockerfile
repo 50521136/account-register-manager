@@ -5,8 +5,6 @@ ENV PYTHONDONTWRITEBYTECODE=1 \
 
 WORKDIR /app
 
-RUN groupadd --system app && useradd --system --gid app --home-dir /app app
-
 COPY pyproject.toml README.md ./
 COPY main.py config.example.json ./
 COPY account_register_manager ./account_register_manager
@@ -15,10 +13,7 @@ COPY static ./static
 RUN pip install --no-cache-dir --upgrade pip \
     && pip install --no-cache-dir .
 
-RUN mkdir -p /app/data \
-    && chown -R app:app /app
-
-USER app
+RUN mkdir -p /app/data
 
 EXPOSE 8010
 

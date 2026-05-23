@@ -334,7 +334,15 @@ function headers(json = true) {
 }
 async function api(path, opts = {}) {
   const res = await fetch(path, { ...opts, headers: { ...headers(), ...(opts.headers || {}) } });
-  if (!res.ok) throw new Error(await res.text());
+  if (!res.ok) {
+    const text = await res.text();
+    let message = text || `HTTP ${res.status}`;
+    try {
+      const payload = JSON.parse(text);
+      message = payload.detail?.error || payload.detail || payload.error || message;
+    } catch {}
+    throw new Error(typeof message === "string" ? message : JSON.stringify(message));
+  }
   return res.json();
 }
 function showTab(name) {
@@ -349,6 +357,10 @@ function showTab(name) {
   if (name === "settings") loadSettings().catch(showError);
 }
 function showError(error) { alert(error instanceof Error ? error.message : String(error)); }
+window.addEventListener("unhandledrejection", (event) => {
+  event.preventDefault();
+  showError(event.reason);
+});
 async function login() {
   const key = $("loginAuthKey").value.trim();
   const errorBox = $("loginError");
@@ -732,7 +744,7 @@ async function saveSettings() {
   };
   const data = await api("/api/settings", { method: "POST", body: JSON.stringify(body) });
   settingsCache = data.settings || {};
-  loadSettings().catch(showError);
+  await loadSettings();
   alert("设置已保存。账号刷新会在下一次请求时使用新的出口代理。");
 }
 async function testProxy() {

@@ -1,5 +1,6 @@
 __pycache__/
 *.py[cod]
+*.egg-info/
 .venv/
 .env
 
@@ -7,4 +8,3 @@ config.json
 data/
 
 .upstream-chatgpt2api
-
