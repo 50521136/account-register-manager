@@ -1,0 +1,37 @@
+name: Sync registration sources
+
+on:
+  workflow_dispatch:
+  schedule:
+    - cron: "17 3 * * *"
+
+permissions:
+  contents: write
+
+jobs:
+  sync:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout this repository
+        uses: actions/checkout@v4
+
+      - name: Checkout upstream chatgpt2api
+        uses: actions/checkout@v4
+        with:
+          repository: basketikun/chatgpt2api
+          path: upstream-chatgpt2api
+
+      - name: Configure upstream path
+        run: echo "$GITHUB_WORKSPACE/upstream-chatgpt2api" > .upstream-chatgpt2api
+
+      - name: Sync registration sources
+        run: python scripts/sync_register_sources.py
+
+      - name: Remove upstream path marker
+        run: rm -f .upstream-chatgpt2api
+
+      - name: Commit changes
+        uses: stefanzweifel/git-auto-commit-action@v5
+        with:
+          commit_message: "sync registration sources from upstream"
+          file_pattern: "account_register_manager/register/*.py"

@@ -1,0 +1,13 @@
+[project]
+name = "account-register-manager"
+version = "0.1.0"
+description = "Standalone account pool and registration manager extracted from chatgpt2api"
+requires-python = ">=3.11"
+dependencies = [
+    "curl-cffi>=0.15.0",
+    "fastapi>=0.110.0",
+    "requests>=2.31.0",
+    "urllib3>=2.0.0",
+    "uvicorn>=0.27.0",
+]
+

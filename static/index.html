@@ -1,0 +1,821 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Account Register Manager</title>
+  <style>
+    :root { color-scheme: light; font-family: Inter, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; }
+    * { box-sizing: border-box; }
+    body { margin: 0; background: #f4f6f8; color: #17181a; }
+    main { max-width: 1320px; margin: 0 auto; padding: 22px; }
+    header { display: flex; gap: 14px; align-items: center; justify-content: space-between; margin-bottom: 16px; }
+    h1 { font-size: 24px; margin: 0; letter-spacing: 0; }
+    h2 { font-size: 18px; margin: 0 0 12px; }
+    h3 { font-size: 15px; margin: 0; }
+    label { display: grid; gap: 6px; font-size: 13px; color: #4b5563; }
+    input, textarea, select {
+      width: 100%; border: 1px solid #cfd6df; border-radius: 6px; padding: 9px 10px;
+      font: inherit; background: #fff; color: #111827;
+    }
+    textarea { min-height: 86px; resize: vertical; font-family: ui-monospace, SFMono-Regular, Consolas, monospace; font-size: 12px; }
+    button {
+      border: 1px solid #2563eb; background: #2563eb; color: #fff; border-radius: 6px;
+      padding: 9px 12px; cursor: pointer; font: inherit;
+    }
+    button.secondary { background: #fff; color: #1d4ed8; }
+    button.muted { border-color: #cfd6df; background: #fff; color: #374151; }
+    button.danger { border-color: #c93535; background: #c93535; }
+    button:disabled { opacity: .55; cursor: not-allowed; }
+    .auth { max-width: 360px; }
+    .tabs { display: flex; gap: 8px; margin-bottom: 14px; }
+    .tabs button { background: #fff; color: #374151; border-color: #cfd6df; }
+    .tabs button.active { background: #111827; color: #fff; border-color: #111827; }
+    .panel { display: none; }
+    .panel.active { display: block; }
+    section { background: #fff; border: 1px solid #dde3eb; border-radius: 8px; padding: 16px; margin: 14px 0; }
+    .toolbar { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; justify-content: space-between; margin: 12px 0; }
+    .actions { display: flex; flex-wrap: wrap; gap: 8px; }
+    .grid { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 10px; }
+    .grid.two { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+    .stats { display: grid; grid-template-columns: repeat(6, minmax(0, 1fr)); gap: 10px; }
+    .stat { border: 1px solid #e5e7eb; border-radius: 6px; padding: 12px; background: #fbfcfd; }
+    .stat span { display: block; color: #6b7280; font-size: 12px; }
+    .stat strong { display: block; margin-top: 4px; font-size: 22px; }
+    .table-wrap { overflow-x: auto; border: 1px solid #e5e7eb; border-radius: 8px; }
+    table { width: 100%; border-collapse: collapse; min-width: 980px; font-size: 13px; background: #fff; }
+    th, td { border-bottom: 1px solid #e5e7eb; padding: 9px; text-align: left; vertical-align: middle; }
+    th { color: #6b7280; font-size: 12px; background: #f9fafb; }
+    td code { font-family: ui-monospace, SFMono-Regular, Consolas, monospace; font-size: 12px; }
+    .badge { display: inline-flex; align-items: center; border-radius: 999px; padding: 3px 8px; font-size: 12px; background: #eef2ff; color: #3730a3; }
+    .ok { background: #ecfdf5; color: #047857; }
+    .warn { background: #fff7ed; color: #c2410c; }
+    .bad { background: #fef2f2; color: #b91c1c; }
+    .empty { padding: 28px; text-align: center; color: #6b7280; }
+    .provider { border: 1px solid #e5e7eb; border-radius: 8px; padding: 12px; margin-top: 12px; background: #fbfcfd; }
+    .provider-head { display: flex; align-items: center; justify-content: space-between; gap: 10px; margin-bottom: 10px; }
+    .provider-head label { display: inline-flex; align-items: center; gap: 8px; }
+    .provider-head input[type="checkbox"] { width: auto; }
+    .provider-tools { display: flex; flex-wrap: wrap; gap: 8px; align-items: end; justify-content: flex-end; }
+    .provider-tools select { width: 220px; }
+    .provider-note { margin: 8px 0 10px; color: #6b7280; font-size: 12px; line-height: 1.45; }
+    .dirty { border-color: #f59e0b; background: #fffbeb; color: #92400e; }
+    pre { max-height: 340px; overflow: auto; background: #111827; color: #d1d5db; padding: 12px; border-radius: 8px; font-size: 12px; }
+    .notice { border: 1px solid #fde68a; background: #fffbeb; color: #92400e; border-radius: 6px; padding: 10px; font-size: 13px; line-height: 1.5; }
+    .split { display: grid; grid-template-columns: minmax(0, 1.15fr) minmax(360px, .85fr); gap: 14px; align-items: start; }
+    .login-screen { min-height: 100vh; display: grid; place-items: center; padding: 24px; }
+    .login-box { width: min(420px, 100%); background: #fff; border: 1px solid #dde3eb; border-radius: 8px; padding: 22px; }
+    .login-box h1 { margin-bottom: 6px; }
+    .login-box p { margin: 0 0 16px; color: #6b7280; font-size: 13px; }
+    @media (max-width: 900px) { header, .split { display: block; } .grid, .grid.two, .stats { grid-template-columns: 1fr; } .auth { max-width: none; margin-top: 10px; } }
+  </style>
+</head>
+<body>
+<div id="loginScreen" class="login-screen" style="display:none">
+  <div class="login-box">
+    <h1>号池与注册机</h1>
+    <p>请输入管理密钥后进入控制台。</p>
+    <label>管理密钥
+      <input id="loginAuthKey" type="password" placeholder="config.json 里的 auth_key" autocomplete="current-password">
+    </label>
+    <div id="loginError" class="notice bad" style="display:none;margin-top:12px"></div>
+    <div class="actions" style="margin-top:14px">
+      <button onclick="login()">进入</button>
+    </div>
+  </div>
+</div>
+
+<main id="appShell" style="display:none">
+  <header>
+    <div>
+      <h1>号池与注册机</h1>
+      <div style="margin-top:4px;color:#6b7280;font-size:13px">独立提取版，本地运行</div>
+    </div>
+    <div class="actions">
+      <button class="muted" onclick="logout()">退出</button>
+    </div>
+    <input id="authKey" type="hidden">
+  </header>
+
+  <nav class="tabs">
+    <button id="tabAccounts" class="active" onclick="showTab('accounts')">号池管理</button>
+    <button id="tabRegister" onclick="showTab('register')">注册机配置</button>
+    <button id="tabSettings" onclick="showTab('settings')">设置</button>
+  </nav>
+
+  <div id="panelAccounts" class="panel active">
+    <section>
+      <div class="toolbar">
+        <h2>号池管理</h2>
+        <div class="actions">
+          <button class="muted" onclick="loadAccounts()">刷新列表</button>
+          <button id="refreshSelectedButton" class="secondary" onclick="refreshAccounts(selectedTokens())">刷新选中</button>
+          <button id="refreshAllButton" class="secondary" onclick="refreshAccounts(allTokens())">刷新全部</button>
+          <button class="secondary" onclick="exportAccounts('json', selectedOrAll())">导出 JSON</button>
+          <button class="secondary" onclick="exportAccounts('zip', selectedOrAll())">导出 ZIP</button>
+          <button class="danger" onclick="deleteTokens(selectedTokens())">删除选中</button>
+        </div>
+      </div>
+
+      <div class="stats" id="accountStats"></div>
+      <div id="refreshJobNotice" class="notice" style="display:none;margin-top:12px"></div>
+
+      <div class="toolbar">
+        <div class="actions">
+          <input id="accountSearch" style="width:240px" placeholder="搜索邮箱、类型或状态" oninput="renderAccounts()">
+          <select id="statusFilter" style="width:150px" onchange="renderAccounts()">
+            <option value="all">全部状态</option>
+            <option value="正常">正常</option>
+            <option value="限流">限流</option>
+            <option value="异常">异常</option>
+            <option value="禁用">禁用</option>
+          </select>
+        </div>
+        <div class="actions">
+          <button class="muted" onclick="openImportSample()">导入示例格式</button>
+        </div>
+      </div>
+
+      <textarea id="tokens" placeholder="每行一个 access_token，或粘贴账号 JSON 对象/数组。支持 access_token、refresh_token、id_token、email、type、status、quota 字段。"></textarea>
+      <div class="actions" style="margin-top:10px">
+        <button onclick="addAccounts()">导入并刷新</button>
+        <button class="secondary" onclick="addAccounts(false)">只导入不刷新</button>
+      </div>
+
+      <div id="accountsTable" style="margin-top:14px"></div>
+    </section>
+  </div>
+
+  <div id="panelRegister" class="panel">
+    <div class="split">
+      <section>
+        <div class="toolbar">
+          <h2>注册机配置</h2>
+          <div class="actions">
+            <button onclick="saveRegister()">保存配置</button>
+            <button id="startButton" onclick="startRegister()">启动</button>
+            <button id="stopButton" class="secondary" onclick="stopRegister()">停止</button>
+            <button class="muted" onclick="resetRegister()">重置统计</button>
+          </div>
+        </div>
+
+        <div class="grid">
+          <label>注册模式
+            <select id="mode">
+              <option value="total">注册总数</option>
+              <option value="quota">号池剩余额度</option>
+              <option value="available">可用账号数量</option>
+            </select>
+          </label>
+          <label>注册总数<input id="total" type="number" min="1" value="1"></label>
+          <label>线程数<input id="threads" type="number" min="1" value="1"></label>
+          <label>注册代理<input id="proxy" placeholder="http://127.0.0.1:7890"></label>
+          <label>目标剩余额度<input id="target_quota" type="number" min="1" value="100"></label>
+          <label>目标可用账号<input id="target_available" type="number" min="1" value="10"></label>
+          <label>检查间隔秒<input id="check_interval" type="number" min="1" value="5"></label>
+          <label>运行状态<input id="registerState" readonly></label>
+        </div>
+
+        <section style="padding:12px;margin:14px 0 0">
+          <div class="toolbar">
+            <h3>邮箱基础设置</h3>
+            <div class="provider-tools">
+              <label>Provider 类型
+                <select id="newProviderType">
+                  <option value="tempmail_lol">tempmail_lol</option>
+                  <option value="cloudmail_gen">cloudmail_gen</option>
+                  <option value="cloudflare_temp_email">cloudflare_temp_email</option>
+                  <option value="moemail">moemail</option>
+                  <option value="inbucket">inbucket</option>
+                  <option value="duckmail">duckmail</option>
+                  <option value="gptmail">gptmail</option>
+                  <option value="yyds_mail">yyds_mail</option>
+                  <option value="ddg_mail">ddg_mail</option>
+                </select>
+              </label>
+              <button class="secondary" onclick="addProvider()">添加邮箱 Provider</button>
+            </div>
+          </div>
+          <div id="dirtyHint" class="notice dirty" style="display:none;margin:0 0 12px">有未保存的注册机配置。右侧运行状态会继续刷新，但不会覆盖你正在编辑的邮箱参数。</div>
+          <div class="grid">
+            <label>请求超时秒<input id="mail_request_timeout" type="number" min="1" value="30"></label>
+            <label>等待验证码超时秒<input id="mail_wait_timeout" type="number" min="1" value="30"></label>
+            <label>轮询间隔秒<input id="mail_wait_interval" type="number" min="1" value="2"></label>
+            <label>User-Agent<input id="mail_user_agent" placeholder="Mozilla/5.0"></label>
+          </div>
+          <div id="providers"></div>
+        </section>
+
+        <details style="margin-top:12px">
+          <summary>查看/编辑完整 mail JSON</summary>
+          <textarea id="mailJson" style="margin-top:10px;min-height:160px"></textarea>
+          <div class="actions" style="margin-top:8px">
+            <button class="muted" onclick="applyMailJson()">应用 JSON 到表单</button>
+          </div>
+        </details>
+      </section>
+
+      <section>
+        <div class="toolbar">
+          <h2>运行结果</h2>
+          <span id="stateBadge" class="badge">已停止</span>
+        </div>
+        <div class="stats" style="grid-template-columns:repeat(2,minmax(0,1fr))" id="registerStats"></div>
+        <div class="notice" style="margin-top:12px">启动前先保存配置。注册任务会把成功拿到 token 的账号写入本地号池。</div>
+        <h3 style="margin-top:14px">实时日志</h3>
+        <pre id="registerLog">暂无日志</pre>
+      </section>
+    </div>
+  </div>
+
+  <div id="panelSettings" class="panel">
+    <section>
+      <div class="toolbar">
+        <h2>设置</h2>
+        <div class="actions">
+          <button onclick="saveSettings()">保存设置</button>
+          <button id="testProxyButton" class="secondary" onclick="testProxy()">检测出口代理</button>
+          <button class="muted" onclick="loadSettings()">重新加载</button>
+        </div>
+      </div>
+
+      <div class="grid two">
+        <label>出口代理
+          <input id="settings_outbound_proxy" placeholder="http://127.0.0.1:7890 或 socks5://127.0.0.1:1080">
+        </label>
+        <label>账号刷新并发
+          <input id="settings_image_account_concurrency" type="number" min="1" value="3">
+        </label>
+        <label>账号定时刷新间隔分钟
+          <input id="settings_refresh_account_interval_minutes" type="number" min="0" value="0">
+        </label>
+        <label style="display:inline-flex;align-items:center;gap:8px">
+          <input id="settings_auto_remove_invalid_accounts" type="checkbox" style="width:auto">
+          自动移除无效账号
+        </label>
+        <label style="display:inline-flex;align-items:center;gap:8px">
+          <input id="settings_auto_remove_rate_limited_accounts" type="checkbox" style="width:auto">
+          自动移除限流账号
+        </label>
+      </div>
+
+      <div class="notice" style="margin-top:12px">
+        出口代理会用于账号检测/刷新请求。账号定时刷新间隔填 0 表示关闭自动检测；注册机仍使用注册页里的“注册代理”，这样注册和检测可以分开配置。
+      </div>
+      <div id="proxyTestResult" class="notice" style="display:none;margin-top:12px"></div>
+    </section>
+
+    <section>
+      <div class="toolbar">
+        <h2>CLIProxyAPI 兼容接口</h2>
+        <button class="secondary" onclick="copyCpaExample()">复制调用示例</button>
+      </div>
+      <div class="grid two">
+        <label>CPA Secret Key
+          <input id="settings_cpa_secret_key" placeholder="其他程序访问本号池时使用的 Bearer Token">
+        </label>
+        <label>Base URL
+          <input id="settings_cpa_base_url" readonly>
+        </label>
+      </div>
+      <div class="table-wrap" style="margin-top:12px">
+        <table style="min-width:720px">
+          <thead><tr><th>用途</th><th>接口</th><th>说明</th></tr></thead>
+          <tbody>
+            <tr><td>文件列表</td><td><code id="cpaListUrl"></code></td><td>返回 <code>{"files":[...]}</code></td></tr>
+            <tr><td>下载账号</td><td><code id="cpaDownloadUrl"></code></td><td>参数 <code>?name=xxx.json</code>，返回完整账号 JSON，含 access_token</td></tr>
+          </tbody>
+        </table>
+      </div>
+      <pre id="cpaExample" style="margin-top:12px"></pre>
+      <div class="notice" style="margin-top:12px">
+        其他程序如果支持 CLIProxyAPI/CPA 远程号池，可以把 Base URL 填为本页面显示的地址，Secret Key 填这里的 CPA Secret Key。
+      </div>
+    </section>
+  </div>
+</main>
+
+<script>
+const $ = (id) => document.getElementById(id);
+let accountsCache = [];
+let registerCache = null;
+let settingsCache = null;
+let registerDirty = false;
+let registerHydrated = false;
+let accountRefreshJob = null;
+let accountRefreshPollTimer = null;
+let accountRefreshWasRunning = false;
+
+const providerDefaults = {
+  cloudmail_gen: { type: "cloudmail_gen", enable: true, api_base: "", admin_email: "", admin_password: "", domain: [], subdomain: [], email_prefix: "" },
+  cloudflare_temp_email: { type: "cloudflare_temp_email", enable: true, api_base: "", admin_password: "", domain: [] },
+  tempmail_lol: { type: "tempmail_lol", enable: true, api_key: "", domain: [] },
+  moemail: { type: "moemail", enable: true, api_base: "", api_key: "", domain: [], expiry_time: 0 },
+  inbucket: { type: "inbucket", enable: true, api_base: "", domain: [], random_subdomain: true },
+  duckmail: { type: "duckmail", enable: true, api_key: "", default_domain: "duckmail.sbs" },
+  gptmail: { type: "gptmail", enable: true, api_key: "", default_domain: "" },
+  yyds_mail: { type: "yyds_mail", enable: true, api_base: "https://maliapi.215.im/v1", api_key: "", domain: [], subdomain: "", wildcard: false },
+  ddg_mail: { type: "ddg_mail", enable: true, ddg_token: "", cf_api_base: "", cf_inbox_jwt: "", admin_password: "", cf_domain: [] }
+};
+const providerNotes = {
+  tempmail_lol: "需要 API Key；Domain 可留空使用服务默认域名，也可一行一个域名。",
+  cloudmail_gen: "需要 CloudMail URL、管理员邮箱和管理员密码；Domain/Subdomain 支持多行轮换。",
+  cloudflare_temp_email: "需要 API Base 和 Admin Password；Domain 一行一个。",
+  moemail: "需要 API Base、API Key 和 Domain。",
+  inbucket: "适合本地/自建 Inbucket；需要 API Base 和基础域名，可开启随机子域名。",
+  duckmail: "需要 API Key；Default Domain 默认 duckmail.sbs。",
+  gptmail: "需要 API Key；Default Domain 可选。",
+  yyds_mail: "需要 API Base 和 API Key；可配置 Domain、Subdomain、Wildcard。",
+  ddg_mail: "DDG 邮箱别名 + CF 收件箱转发模式；需要 DDG Token 和 CF Inbox JWT。"
+};
+
+function headers(json = true) {
+  return { ...(json ? { "Content-Type": "application/json" } : {}), Authorization: `Bearer ${$("authKey").value.trim()}` };
+}
+async function api(path, opts = {}) {
+  const res = await fetch(path, { ...opts, headers: { ...headers(), ...(opts.headers || {}) } });
+  if (!res.ok) throw new Error(await res.text());
+  return res.json();
+}
+function showTab(name) {
+  $("tabAccounts").classList.toggle("active", name === "accounts");
+  $("tabRegister").classList.toggle("active", name === "register");
+  $("tabSettings").classList.toggle("active", name === "settings");
+  $("panelAccounts").classList.toggle("active", name === "accounts");
+  $("panelRegister").classList.toggle("active", name === "register");
+  $("panelSettings").classList.toggle("active", name === "settings");
+  if (name === "accounts") loadAccounts().catch(showError);
+  if (name === "register") loadRegister().catch(showError);
+  if (name === "settings") loadSettings().catch(showError);
+}
+function showError(error) { alert(error instanceof Error ? error.message : String(error)); }
+async function login() {
+  const key = $("loginAuthKey").value.trim();
+  const errorBox = $("loginError");
+  if (!key) {
+    errorBox.style.display = "block";
+    errorBox.textContent = "请输入管理密钥";
+    return;
+  }
+  $("authKey").value = key;
+  try {
+    await api("/api/settings");
+    localStorage.setItem("account-register-auth", key);
+    errorBox.style.display = "none";
+    showApp();
+  } catch (error) {
+    errorBox.style.display = "block";
+    errorBox.textContent = "管理密钥无效或服务不可用";
+  }
+}
+function logout() {
+  localStorage.removeItem("account-register-auth");
+  $("authKey").value = "";
+  $("loginAuthKey").value = "";
+  $("appShell").style.display = "none";
+  $("loginScreen").style.display = "grid";
+}
+function showApp() {
+  $("loginScreen").style.display = "none";
+  $("appShell").style.display = "block";
+  loadAccounts().catch(showError);
+  loadRegister().catch(showError);
+  loadSettings().catch(showError);
+}
+function maskToken(token) {
+  token = String(token || "");
+  return token.length > 26 ? `${token.slice(0, 16)}...${token.slice(-8)}` : token;
+}
+function selectedTokens() { return [...document.querySelectorAll("[data-token]:checked")].map((el) => el.dataset.token); }
+function allTokens() { return accountsCache.map((item) => item.access_token).filter(Boolean); }
+function selectedOrAll() { const selected = selectedTokens(); return selected.length ? selected : allTokens(); }
+function quotaValue(item) { return item.image_quota_unknown ? "未知" : Math.max(0, Number(item.quota || 0)); }
+function statusClass(status) { return status === "正常" ? "ok" : status === "限流" ? "warn" : status === "异常" ? "bad" : ""; }
+
+async function loadAccounts() {
+  const data = await api("/api/accounts");
+  accountsCache = data.items || [];
+  renderAccounts();
+  await loadRefreshJob();
+}
+async function loadRefreshJob() {
+  const data = await api("/api/accounts/refresh/job");
+  accountRefreshJob = data.refresh_job;
+  renderRefreshJob();
+  if (accountRefreshJob && accountRefreshJob.status === "running") startRefreshPolling();
+}
+function startRefreshPolling() {
+  if (accountRefreshPollTimer) return;
+  accountRefreshPollTimer = setInterval(() => loadRefreshJob().catch(() => {}), 1000);
+}
+function stopRefreshPolling() {
+  if (!accountRefreshPollTimer) return;
+  clearInterval(accountRefreshPollTimer);
+  accountRefreshPollTimer = null;
+}
+function renderRefreshJob() {
+  const running = accountRefreshJob && accountRefreshJob.status === "running";
+  const notice = $("refreshJobNotice");
+  if (notice) {
+    if (accountRefreshJob) {
+      const createdAt = accountRefreshJob.created_at ? new Date(accountRefreshJob.created_at).getTime() : Date.now();
+      const elapsed = Math.max(0, Math.round((Date.now() - createdAt) / 1000));
+      const submitted = accountRefreshJob.submitted || 0;
+      const maxWorkers = accountRefreshJob.max_workers || 0;
+      notice.style.display = "block";
+      notice.textContent = running
+        ? `账号刷新中：完成 ${accountRefreshJob.completed || 0}/${accountRefreshJob.total || 0}，已提交 ${submitted}，并发 ${maxWorkers}，运行 ${elapsed}s。页面刷新不会中断后台任务。`
+        : `最近刷新完成：成功 ${accountRefreshJob.refreshed || 0}，失败 ${accountRefreshJob.failed || 0}`;
+    } else {
+      notice.style.display = "none";
+    }
+  }
+  for (const id of ["refreshSelectedButton", "refreshAllButton"]) {
+    const button = $(id);
+    if (!button) continue;
+    button.disabled = Boolean(running);
+    button.textContent = running ? "刷新中..." : (id === "refreshSelectedButton" ? "刷新选中" : "刷新全部");
+  }
+  if (!running) {
+    const shouldReloadAccounts = accountRefreshWasRunning && accountRefreshJob;
+    accountRefreshWasRunning = false;
+    stopRefreshPolling();
+    if (shouldReloadAccounts) loadAccounts().catch(() => {});
+  } else {
+    accountRefreshWasRunning = true;
+  }
+}
+function renderAccounts() {
+  const q = $("accountSearch").value.trim().toLowerCase();
+  const status = $("statusFilter").value;
+  const rows = accountsCache.filter((item) => {
+    const hit = !q || [item.email, item.type, item.status, item.access_token].some((value) => String(value || "").toLowerCase().includes(q));
+    return hit && (status === "all" || item.status === status);
+  });
+  const normal = accountsCache.filter((item) => item.status === "正常");
+  const stats = [
+    ["账号总数", accountsCache.length],
+    ["正常账号", normal.length],
+    ["限流账号", accountsCache.filter((item) => item.status === "限流").length],
+    ["异常账号", accountsCache.filter((item) => item.status === "异常").length],
+    ["禁用账号", accountsCache.filter((item) => item.status === "禁用").length],
+    ["剩余额度", normal.some((item) => item.image_quota_unknown) ? "未知" : normal.reduce((sum, item) => sum + Math.max(0, Number(item.quota || 0)), 0)]
+  ];
+  $("accountStats").innerHTML = stats.map(([label, value]) => `<div class="stat"><span>${label}</span><strong>${value}</strong></div>`).join("");
+  if (!rows.length) {
+    $("accountsTable").innerHTML = `<div class="empty">当前没有账号。可以在上方粘贴 token 或账号 JSON 导入。</div>`;
+    return;
+  }
+  $("accountsTable").innerHTML = `<div class="table-wrap"><table><thead><tr>
+    <th><input type="checkbox" onchange="toggleAllRows(this.checked)"></th><th>Token</th><th>邮箱</th><th>类型</th><th>状态</th><th>额度</th><th>恢复时间</th><th>成功</th><th>失败</th><th>操作</th>
+  </tr></thead><tbody>${rows.map((item) => `<tr>
+    <td><input type="checkbox" data-token="${item.access_token}"></td>
+    <td><code title="${item.access_token}">${maskToken(item.access_token)}</code></td>
+    <td>${item.email || "-"}</td>
+    <td><span class="badge">${item.type || "free"}</span></td>
+    <td><span class="badge ${statusClass(item.status)}">${item.status || "正常"}</span></td>
+    <td>${quotaValue(item)}</td>
+    <td>${item.restore_at || "-"}</td>
+    <td>${item.success || 0}</td>
+    <td>${item.fail || 0}</td>
+    <td class="actions">
+      <button class="muted" onclick="editAccount('${item.access_token}')">编辑</button>
+      <button class="secondary" onclick="refreshAccounts(['${item.access_token}'])">刷新</button>
+      <button class="danger" onclick="deleteTokens(['${item.access_token}'])">删除</button>
+    </td>
+  </tr>`).join("")}</tbody></table></div>`;
+}
+function toggleAllRows(checked) { document.querySelectorAll("[data-token]").forEach((el) => { el.checked = checked; }); }
+function openImportSample() {
+  $("tokens").value = JSON.stringify([{ email: "user@example.com", access_token: "access_token_here", refresh_token: "refresh_token_here", id_token: "id_token_here", type: "codex", status: "正常", quota: 0 }], null, 2);
+}
+async function addAccounts(refresh = true) {
+  const text = $("tokens").value.trim();
+  if (!text) return showError("请先粘贴 token 或账号 JSON");
+  let body;
+  try {
+    const parsed = JSON.parse(text);
+    body = Array.isArray(parsed) ? { accounts: parsed } : { accounts: [parsed] };
+  } catch {
+    body = { tokens: text.split(/\s+/).filter(Boolean) };
+  }
+  if (refresh) {
+    const data = await api("/api/accounts", { method: "POST", body: JSON.stringify({ ...body, refresh: true }) });
+    accountsCache = data.items || [];
+  } else {
+    const tokens = body.tokens || (body.accounts || []).map((item) => item.access_token || item.accessToken).filter(Boolean);
+    const data = await api("/api/accounts", { method: "POST", body: JSON.stringify({ tokens, accounts: body.accounts || [], refresh: false }) });
+    accountsCache = data.items || [];
+  }
+  renderAccounts();
+}
+async function refreshAccounts(tokens) {
+  if (!tokens.length) return showError("没有可刷新的账号");
+  const data = await api("/api/accounts/refresh/start", { method: "POST", body: JSON.stringify({ access_tokens: tokens }) });
+  accountRefreshJob = data.refresh_job;
+  renderRefreshJob();
+  startRefreshPolling();
+}
+async function deleteTokens(tokens) {
+  if (!tokens.length) return showError("请先选择账号");
+  if (!confirm(`确定删除 ${tokens.length} 个账号？`)) return;
+  const data = await api("/api/accounts", { method: "DELETE", body: JSON.stringify({ tokens }) });
+  accountsCache = data.items || [];
+  renderAccounts();
+}
+async function editAccount(token) {
+  const item = accountsCache.find((row) => row.access_token === token);
+  if (!item) return;
+  const status = prompt("状态：正常 / 限流 / 异常 / 禁用", item.status || "正常");
+  if (!status) return;
+  const quotaText = prompt("额度", String(item.quota || 0));
+  const quota = Number(quotaText);
+  const data = await api("/api/accounts/update", { method: "POST", body: JSON.stringify({ access_token: token, status, quota: Number.isFinite(quota) ? quota : item.quota, type: item.type || "free" }) });
+  accountsCache = data.items || [];
+  renderAccounts();
+}
+async function exportAccounts(format, tokens) {
+  if (!tokens.length) return showError("没有可导出的账号");
+  const res = await fetch("/api/accounts/export", { method: "POST", headers: headers(), body: JSON.stringify({ access_tokens: tokens, format }) });
+  if (!res.ok) throw new Error(await res.text());
+  const blob = await res.blob();
+  const url = URL.createObjectURL(blob);
+  const a = Object.assign(document.createElement("a"), { href: url, download: `accounts.${format}` });
+  a.click();
+  URL.revokeObjectURL(url);
+}
+
+async function loadRegister() {
+  const data = await api("/api/register");
+  registerCache = data.register;
+  const cfg = registerCache;
+  const stopping = Boolean(cfg.stats?.stopping);
+  const stateText = stopping ? "停止中" : (cfg.enabled ? ((cfg.stats?.running || 0) > 0 ? "运行中" : "监控中") : "已停止");
+  $("registerState").value = stateText;
+  $("stateBadge").textContent = stateText;
+  $("stateBadge").className = `badge ${cfg.enabled ? "ok" : stopping ? "warn" : ""}`;
+  $("startButton").textContent = stopping ? "停止中..." : (cfg.enabled ? "已启动" : "启动");
+  $("startButton").disabled = Boolean(cfg.enabled || stopping);
+  $("stopButton").textContent = stopping ? "停止中..." : "停止";
+  $("stopButton").disabled = Boolean(!cfg.enabled || stopping);
+  renderRegisterStats(cfg.stats || {});
+  $("registerLog").textContent = (cfg.logs || []).length ? (cfg.logs || []).slice().reverse().map((line) => `${line.time} ${line.text}`).join("\n") : "暂无日志";
+  if (!registerDirty || !registerHydrated) {
+    hydrateRegisterForm(cfg);
+  }
+  setDirtyHint(registerDirty);
+}
+function hydrateRegisterForm(cfg) {
+  for (const key of ["mode", "total", "threads", "proxy", "target_quota", "target_available", "check_interval"]) $(key).value = cfg[key] ?? "";
+  const mail = cfg.mail || { request_timeout: 30, wait_timeout: 30, wait_interval: 2, providers: [] };
+  $("mail_request_timeout").value = mail.request_timeout ?? 30;
+  $("mail_wait_timeout").value = mail.wait_timeout ?? 30;
+  $("mail_wait_interval").value = mail.wait_interval ?? 2;
+  $("mail_user_agent").value = mail.user_agent || "";
+  renderProviders(mail.providers || []);
+  updateMailJson(false);
+  registerHydrated = true;
+}
+function setRegisterDirty(value = true) {
+  registerDirty = value;
+  setDirtyHint(value);
+}
+function setDirtyHint(value) {
+  const hint = $("dirtyHint");
+  if (hint) hint.style.display = value ? "block" : "none";
+}
+function readMailFromForm() {
+  return {
+    request_timeout: Number($("mail_request_timeout").value || 30),
+    wait_timeout: Number($("mail_wait_timeout").value || 30),
+    wait_interval: Number($("mail_wait_interval").value || 2),
+    user_agent: $("mail_user_agent").value.trim() || undefined,
+    providers: [...document.querySelectorAll(".provider")].map(readProviderElement)
+  };
+}
+function renderRegisterStats(stats) {
+  const items = [
+    ["成功 / 成功率", `${stats.success || 0} / ${stats.success_rate || 0}%`],
+    ["失败", stats.fail || 0],
+    ["完成", stats.done || 0],
+    ["运行 / 线程", `${stats.running || 0} / ${stats.threads || 0}`],
+    ["当前额度", stats.current_quota || 0],
+    ["正常账号", stats.current_available || 0]
+  ];
+  $("registerStats").innerHTML = items.map(([label, value]) => `<div class="stat"><span>${label}</span><strong>${value}</strong></div>`).join("");
+}
+function providerField(name, label, value = "", type = "text") {
+  return `<label>${label}<input data-field="${name}" type="${type}" value="${String(value ?? "").replaceAll('"', "&quot;")}"></label>`;
+}
+function providerListField(name, label, value = []) {
+  const text = Array.isArray(value) ? value.join("\n") : String(value || "");
+  return `<label>${label}<textarea data-field="${name}" data-list="1" placeholder="一行一个，或用逗号分隔">${text}</textarea></label>`;
+}
+function providerCheck(name, label, checked = false) {
+  return `<label style="display:inline-flex;align-items:center;gap:8px"><input data-field="${name}" type="checkbox" ${checked ? "checked" : ""}>${label}</label>`;
+}
+function renderProviders(providers) {
+  $("providers").innerHTML = providers.map((provider, index) => providerHtml(provider, index)).join("") || `<div class="empty">还没有邮箱 Provider，点击“添加邮箱 Provider”开始配置。</div>`;
+}
+function providerHtml(provider, index) {
+  const type = provider.type || "tempmail_lol";
+  const types = Object.keys(providerDefaults).map((name) => `<option value="${name}" ${name === type ? "selected" : ""}>${name}</option>`).join("");
+  let fields = "";
+  if (["cloudmail_gen", "cloudflare_temp_email", "moemail", "inbucket", "yyds_mail"].includes(type)) fields += providerField("api_base", type === "cloudmail_gen" ? "CloudMail URL" : "API Base", provider.api_base);
+  if (type === "cloudmail_gen") fields += providerField("admin_email", "管理员邮箱", provider.admin_email) + providerField("admin_password", "管理员密码", provider.admin_password) + providerField("email_prefix", "邮箱前缀", provider.email_prefix);
+  if (["cloudflare_temp_email"].includes(type)) fields += providerField("admin_password", "Admin Password", provider.admin_password);
+  if (["tempmail_lol", "moemail", "duckmail", "gptmail", "yyds_mail"].includes(type)) fields += providerField("api_key", "API Key", provider.api_key);
+  if (["duckmail", "gptmail"].includes(type)) fields += providerField("default_domain", "Default Domain", provider.default_domain);
+  if (["cloudmail_gen", "cloudflare_temp_email", "tempmail_lol", "moemail", "inbucket", "yyds_mail"].includes(type)) fields += providerListField("domain", type === "inbucket" ? "基础域名列表" : "Domain 列表", provider.domain);
+  if (type === "cloudmail_gen") fields += providerListField("subdomain", "Subdomain 列表", provider.subdomain);
+  if (type === "inbucket") fields += providerCheck("random_subdomain", "启用随机子域名", provider.random_subdomain ?? true);
+  if (type === "yyds_mail") fields += providerField("subdomain", "Subdomain", provider.subdomain) + providerCheck("wildcard", "Wildcard", provider.wildcard);
+  if (type === "ddg_mail") fields += providerField("ddg_token", "DDG Token", provider.ddg_token) + providerField("cf_api_base", "CF API Base", provider.cf_api_base || provider.api_base) + providerField("cf_inbox_jwt", "CF Inbox JWT", provider.cf_inbox_jwt) + providerField("admin_password", "Admin Password", provider.admin_password) + providerListField("cf_domain", "CF Domain 列表", provider.cf_domain);
+  return `<div class="provider" data-index="${index}">
+    <div class="provider-head">
+      <label><input data-field="enable" type="checkbox" ${provider.enable !== false ? "checked" : ""}>启用</label>
+      <div class="actions">
+        <select data-field="type" onchange="changeProviderType(${index}, this.value)">${types}</select>
+        <button class="danger" onclick="deleteProvider(${index})">删除</button>
+      </div>
+    </div>
+    <div class="provider-note">${providerNotes[type] || ""}</div>
+    <div class="grid two">${fields}</div>
+  </div>`;
+}
+function readProviderElement(el) {
+  const provider = {};
+  el.querySelectorAll("[data-field]").forEach((field) => {
+    const key = field.dataset.field;
+    if (field.type === "checkbox") provider[key] = field.checked;
+    else if (field.dataset.list) provider[key] = field.value.split(/[\n,]/).map((item) => item.trim()).filter(Boolean);
+    else provider[key] = field.value.trim();
+  });
+  return provider;
+}
+function currentProviders() { return [...document.querySelectorAll(".provider")].map(readProviderElement); }
+function addProvider() {
+  const providers = currentProviders();
+  const type = $("newProviderType")?.value || "tempmail_lol";
+  providers.push({ ...providerDefaults[type] });
+  renderProviders(providers);
+  updateMailJson(true);
+}
+function deleteProvider(index) {
+  const providers = currentProviders();
+  providers.splice(index, 1);
+  renderProviders(providers);
+  updateMailJson(true);
+}
+function changeProviderType(index, type) {
+  const providers = currentProviders();
+  providers[index] = { ...providerDefaults[type] };
+  renderProviders(providers);
+  updateMailJson(true);
+}
+function updateMailJson(markDirty = true) {
+  $("mailJson").value = JSON.stringify(readMailFromForm(), null, 2);
+  if (markDirty) setRegisterDirty(true);
+}
+function applyMailJson() {
+  const mail = JSON.parse($("mailJson").value || "{}");
+  $("mail_request_timeout").value = mail.request_timeout ?? 30;
+  $("mail_wait_timeout").value = mail.wait_timeout ?? 30;
+  $("mail_wait_interval").value = mail.wait_interval ?? 2;
+  $("mail_user_agent").value = mail.user_agent || "";
+  renderProviders(mail.providers || []);
+  updateMailJson(true);
+}
+async function saveRegister() {
+  const body = {
+    mode: $("mode").value,
+    total: Number($("total").value || 1),
+    threads: Number($("threads").value || 1),
+    proxy: $("proxy").value,
+    target_quota: Number($("target_quota").value || 1),
+    target_available: Number($("target_available").value || 1),
+    check_interval: Number($("check_interval").value || 5),
+    mail: readMailFromForm()
+  };
+  await api("/api/register", { method: "POST", body: JSON.stringify(body) });
+  setRegisterDirty(false);
+  await loadRegister();
+}
+async function startRegister() {
+  if (registerDirty && !confirm("当前注册机配置还没有保存。是否先保存配置并启动？")) return;
+  if (registerDirty) await saveRegister();
+  await api("/api/register/start", { method: "POST", body: "{}" });
+  await loadRegister();
+}
+async function stopRegister() { await api("/api/register/stop", { method: "POST", body: "{}" }); await loadRegister(); }
+async function resetRegister() { await api("/api/register/reset", { method: "POST", body: "{}" }); await loadRegister(); }
+
+async function loadSettings() {
+  const data = await api("/api/settings");
+  settingsCache = data.settings || {};
+  $("settings_outbound_proxy").value = settingsCache.outbound_proxy || "";
+  $("settings_image_account_concurrency").value = settingsCache.image_account_concurrency || 3;
+  $("settings_refresh_account_interval_minutes").value = settingsCache.refresh_account_interval_minutes ?? 0;
+  $("settings_auto_remove_invalid_accounts").checked = Boolean(settingsCache.auto_remove_invalid_accounts);
+  $("settings_auto_remove_rate_limited_accounts").checked = Boolean(settingsCache.auto_remove_rate_limited_accounts);
+  $("settings_cpa_secret_key").value = settingsCache.cpa_secret_key || "";
+  renderCpaUrls();
+}
+async function saveSettings() {
+  const body = {
+    outbound_proxy: $("settings_outbound_proxy").value.trim(),
+    image_account_concurrency: Number($("settings_image_account_concurrency").value || 3),
+    refresh_account_interval_minutes: Number($("settings_refresh_account_interval_minutes").value || 0),
+    auto_remove_invalid_accounts: $("settings_auto_remove_invalid_accounts").checked,
+    auto_remove_rate_limited_accounts: $("settings_auto_remove_rate_limited_accounts").checked,
+    cpa_secret_key: $("settings_cpa_secret_key").value.trim()
+  };
+  const data = await api("/api/settings", { method: "POST", body: JSON.stringify(body) });
+  settingsCache = data.settings || {};
+  loadSettings().catch(showError);
+  alert("设置已保存。账号刷新会在下一次请求时使用新的出口代理。");
+}
+async function testProxy() {
+  const button = $("testProxyButton");
+  const resultBox = $("proxyTestResult");
+  button.disabled = true;
+  button.textContent = "检测中...";
+  resultBox.style.display = "block";
+  resultBox.textContent = "正在检测出口代理连通性...";
+  try {
+    const data = await api("/api/settings/test-proxy", {
+      method: "POST",
+      body: JSON.stringify({ outbound_proxy: $("settings_outbound_proxy").value.trim() })
+    });
+    if (data.ok) {
+      resultBox.textContent = `代理可用：出口 IP ${data.ip || "-"}，耗时 ${data.elapsed_ms}ms`;
+      resultBox.className = "notice ok";
+    } else {
+      resultBox.textContent = `代理检测失败：${data.error || `HTTP ${data.status_code || "-"}`}，耗时 ${data.elapsed_ms || 0}ms`;
+      resultBox.className = "notice bad";
+    }
+  } catch (error) {
+    resultBox.textContent = `代理检测失败：${error instanceof Error ? error.message : String(error)}`;
+    resultBox.className = "notice bad";
+  } finally {
+    button.disabled = false;
+    button.textContent = "检测出口代理";
+  }
+}
+function renderCpaUrls() {
+  const base = window.location.origin;
+  const listUrl = `${base}/v0/management/auth-files`;
+  const downloadUrl = `${base}/v0/management/auth-files/download?name=<name>`;
+  $("settings_cpa_base_url").value = base;
+  $("cpaListUrl").textContent = listUrl;
+  $("cpaDownloadUrl").textContent = downloadUrl;
+  const token = $("settings_cpa_secret_key").value || "<CPA_SECRET_KEY>";
+  $("cpaExample").textContent = [
+    `curl -H "Authorization: Bearer ${token}" "${listUrl}"`,
+    "",
+    `curl -H "Authorization: Bearer ${token}" "${downloadUrl}"`
+  ].join("\n");
+}
+async function copyCpaExample() {
+  renderCpaUrls();
+  const text = $("cpaExample").textContent;
+  try {
+    await navigator.clipboard.writeText(text);
+    alert("已复制调用示例");
+  } catch {
+    prompt("复制调用示例", text);
+  }
+}
+
+["mail_request_timeout", "mail_wait_timeout", "mail_wait_interval", "mail_user_agent"].forEach((id) => {
+  document.addEventListener("input", (event) => { if (event.target && event.target.id === id) updateMailJson(); });
+});
+document.addEventListener("input", (event) => { if (event.target && event.target.closest && event.target.closest(".provider")) updateMailJson(); });
+document.addEventListener("change", (event) => { if (event.target && event.target.closest && event.target.closest(".provider")) updateMailJson(); });
+["mode", "total", "threads", "proxy", "target_quota", "target_available", "check_interval"].forEach((id) => {
+  document.addEventListener("input", (event) => { if (event.target && event.target.id === id) setRegisterDirty(true); });
+  document.addEventListener("change", (event) => { if (event.target && event.target.id === id) setRegisterDirty(true); });
+});
+document.addEventListener("input", (event) => {
+  if (event.target && event.target.id === "settings_cpa_secret_key") renderCpaUrls();
+});
+const storedAuthKey = localStorage.getItem("account-register-auth") || "";
+$("authKey").value = storedAuthKey;
+$("loginAuthKey").value = storedAuthKey;
+$("loginAuthKey").addEventListener("keydown", (event) => {
+  if (event.key === "Enter") login();
+});
+if (storedAuthKey) {
+  api("/api/settings").then(showApp).catch(() => {
+    localStorage.removeItem("account-register-auth");
+    $("loginScreen").style.display = "grid";
+  });
+} else {
+  $("loginScreen").style.display = "grid";
+}
+setInterval(() => {
+  if ($("appShell").style.display !== "none" && $("authKey").value.trim() && $("panelRegister").classList.contains("active")) loadRegister().catch(() => {});
+}, 2000);
+</script>
+</body>
+</html>

@@ -1,0 +1,7 @@
+{
+  "auth_key": "change-me",
+  "image_account_concurrency": 3,
+  "auto_remove_invalid_accounts": false,
+  "auto_remove_rate_limited_accounts": false
+}
+
