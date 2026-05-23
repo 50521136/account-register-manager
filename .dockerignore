@@ -1,0 +1,10 @@
+.git
+.github
+__pycache__/
+*.py[cod]
+.venv/
+.env
+
+config.json
+data/
+.upstream-chatgpt2api

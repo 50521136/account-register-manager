@@ -30,6 +30,34 @@ uvicorn main:app --host 127.0.0.1 --port 8010
 
 Open `http://127.0.0.1:8010/` and use the same `auth_key`.
 
+## Docker Run
+
+Copy `config.example.json` to `config.json`, change `auth_key`, then run:
+
+```powershell
+docker compose up -d --build
+```
+
+Open `http://127.0.0.1:8010/`. The compose file mounts:
+
+- `./config.json` to persist settings
+- `./data` to persist account pool and registration settings
+
+You can also override the login key with an environment variable:
+
+```powershell
+$env:ACCOUNT_REGISTER_AUTH_KEY = "your-auth-key"
+docker compose up -d --build
+```
+
+Useful Docker commands:
+
+```powershell
+docker compose logs -f
+docker compose restart
+docker compose down
+```
+
 ## Notes
 
 The registration settings are still stored in `data/register.json`. You must configure

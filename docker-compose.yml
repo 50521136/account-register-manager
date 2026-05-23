@@ -1,0 +1,13 @@
+services:
+  account-register-manager:
+    build: .
+    image: account-register-manager:latest
+    container_name: account-register-manager
+    restart: unless-stopped
+    ports:
+      - "8010:8010"
+    environment:
+      ACCOUNT_REGISTER_AUTH_KEY: "${ACCOUNT_REGISTER_AUTH_KEY:-}"
+    volumes:
+      - ./config.json:/app/config.json
+      - ./data:/app/data
