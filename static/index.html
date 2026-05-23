@@ -268,9 +268,13 @@
     <section>
       <div class="toolbar">
         <h2>注册成功自动上传</h2>
-        <button class="secondary" onclick="addCliproxyUploadTarget()">添加 CLIProxyAPI</button>
+        <div class="actions">
+          <button class="secondary" onclick="addCliproxyUploadTarget()">添加 CLIProxyAPI</button>
+          <button id="cliproxyManualSyncButton" onclick="manualSyncCliproxyUploadTargets()">手动同步</button>
+        </div>
       </div>
       <div id="cliproxyUploadTargets"></div>
+      <div id="cliproxyManualSyncResult" class="notice" style="display:none;margin-top:12px"></div>
       <div class="notice" style="margin-top:12px">
         配置后，注册机每成功注册一个账号，会立即上传到已启用的真正 CLIProxyAPI。没有配置或未启用时不会上传。
       </div>
@@ -757,6 +761,17 @@ function deleteCliproxyUploadTarget(index) {
   targets.splice(index, 1);
   renderCliproxyUploadTargets(targets);
 }
+function settingsBody() {
+  return {
+    outbound_proxy: $("settings_outbound_proxy").value.trim(),
+    image_account_concurrency: Number($("settings_image_account_concurrency").value || 3),
+    refresh_account_interval_minutes: Number($("settings_refresh_account_interval_minutes").value || 0),
+    auto_remove_invalid_accounts: $("settings_auto_remove_invalid_accounts").checked,
+    auto_remove_rate_limited_accounts: $("settings_auto_remove_rate_limited_accounts").checked,
+    cpa_secret_key: $("settings_cpa_secret_key").value.trim(),
+    cliproxy_upload_targets: readCliproxyUploadTargets()
+  };
+}
 async function saveRegister() {
   const body = {
     mode: $("mode").value,
@@ -794,19 +809,34 @@ async function loadSettings() {
   renderCpaUrls();
 }
 async function saveSettings() {
-  const body = {
-    outbound_proxy: $("settings_outbound_proxy").value.trim(),
-    image_account_concurrency: Number($("settings_image_account_concurrency").value || 3),
-    refresh_account_interval_minutes: Number($("settings_refresh_account_interval_minutes").value || 0),
-    auto_remove_invalid_accounts: $("settings_auto_remove_invalid_accounts").checked,
-    auto_remove_rate_limited_accounts: $("settings_auto_remove_rate_limited_accounts").checked,
-    cpa_secret_key: $("settings_cpa_secret_key").value.trim(),
-    cliproxy_upload_targets: readCliproxyUploadTargets()
-  };
-  const data = await api("/api/settings", { method: "POST", body: JSON.stringify(body) });
+  const data = await api("/api/settings", { method: "POST", body: JSON.stringify(settingsBody()) });
   settingsCache = data.settings || {};
   await loadSettings();
   alert("设置已保存。账号刷新会在下一次请求时使用新的出口代理。");
+}
+async function manualSyncCliproxyUploadTargets() {
+  const button = $("cliproxyManualSyncButton");
+  const resultBox = $("cliproxyManualSyncResult");
+  button.disabled = true;
+  button.textContent = "同步中...";
+  resultBox.style.display = "block";
+  resultBox.className = "notice";
+  resultBox.textContent = "正在保存配置并同步本地号池到 CLIProxyAPI...";
+  try {
+    await api("/api/settings", { method: "POST", body: JSON.stringify(settingsBody()) });
+    const data = await api("/api/cliproxy/upload/sync", { method: "POST", body: "{}" });
+    const failedItems = (data.results || []).filter((item) => !item.ok).slice(0, 5);
+    resultBox.className = data.failed ? "notice bad" : "notice ok";
+    resultBox.textContent = `同步完成：账号 ${data.total_accounts || 0} 个，目标 ${data.target_count || 0} 个，成功 ${data.uploaded || 0}，失败 ${data.failed || 0}` +
+      (failedItems.length ? `\n失败示例：\n${failedItems.map((item) => `${item.account} -> ${item.target}: ${item.message}`).join("\n")}` : "");
+    await loadSettings();
+  } catch (error) {
+    resultBox.className = "notice bad";
+    resultBox.textContent = `同步失败：${error instanceof Error ? error.message : String(error)}`;
+  } finally {
+    button.disabled = false;
+    button.textContent = "手动同步";
+  }
 }
 async function testProxy() {
   const button = $("testProxyButton");

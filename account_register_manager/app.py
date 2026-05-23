@@ -21,6 +21,7 @@ from curl_cffi import requests as curl_requests
 
 from account_register_manager.account_service import account_service
 from account_register_manager.auth import require_admin
+from account_register_manager.cliproxy_upload_service import upload_account_to_targets
 from account_register_manager.config import BASE_DIR, config
 from account_register_manager.register_service import register_service
 
@@ -42,6 +43,10 @@ class AccountRefreshRequest(BaseModel):
 class AccountExportRequest(BaseModel):
     access_tokens: list[str] = Field(default_factory=list)
     format: Literal["json", "zip"] = "json"
+
+
+class CliproxySyncRequest(BaseModel):
+    access_tokens: list[str] = Field(default_factory=list)
 
 
 class AccountUpdateRequest(BaseModel):
@@ -265,6 +270,37 @@ def create_app() -> FastAPI:
             return {"ok": False, "proxy": proxy, "elapsed_ms": elapsed_ms, "error": str(exc)}
         finally:
             session.close()
+
+    @app.post("/api/cliproxy/upload/sync")
+    async def sync_cliproxy_upload_targets(body: CliproxySyncRequest, authorization: str | None = Header(default=None)):
+        require_admin(authorization)
+        targets = [target for target in config.cliproxy_upload_targets if target.get("enabled")]
+        if not targets:
+            raise HTTPException(status_code=400, detail={"error": "no enabled CLIProxyAPI upload targets"})
+
+        items = account_service.build_export_items(_unique_tokens(body.access_tokens))
+        if not items:
+            raise HTTPException(status_code=400, detail={"error": "no complete accounts to sync"})
+
+        results: list[dict[str, Any]] = []
+        uploaded = 0
+        failed = 0
+        for item in items:
+            account_label = item.get("email") or item.get("account_id") or item.get("access_token", "")[:16]
+            for result in upload_account_to_targets(targets, item):
+                row = {"account": account_label, **result}
+                results.append(row)
+                if result.get("ok"):
+                    uploaded += 1
+                else:
+                    failed += 1
+        return {
+            "total_accounts": len(items),
+            "target_count": len(targets),
+            "uploaded": uploaded,
+            "failed": failed,
+            "results": results,
+        }
 
     @app.get("/api/accounts")
     async def get_accounts(authorization: str | None = Header(default=None)):
