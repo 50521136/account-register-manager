@@ -11,3 +11,5 @@ dependencies = [
     "uvicorn>=0.27.0",
 ]
 
+[tool.setuptools.packages.find]
+include = ["account_register_manager*"]
