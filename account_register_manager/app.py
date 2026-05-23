@@ -69,6 +69,7 @@ class SettingsUpdateRequest(BaseModel):
     auto_remove_rate_limited_accounts: bool | None = None
     cpa_secret_key: str | None = None
     refresh_account_interval_minutes: int | None = None
+    cliproxy_upload_targets: list[dict[str, Any]] | None = None
 
 
 class ProxyTestRequest(BaseModel):

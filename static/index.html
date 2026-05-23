@@ -267,6 +267,17 @@
 
     <section>
       <div class="toolbar">
+        <h2>注册成功自动上传</h2>
+        <button class="secondary" onclick="addCliproxyUploadTarget()">添加 CLIProxyAPI</button>
+      </div>
+      <div id="cliproxyUploadTargets"></div>
+      <div class="notice" style="margin-top:12px">
+        配置后，注册机每成功注册一个账号，会立即上传到已启用的真正 CLIProxyAPI。没有配置或未启用时不会上传。
+      </div>
+    </section>
+
+    <section>
+      <div class="toolbar">
         <h2>CLIProxyAPI 兼容接口</h2>
         <button class="secondary" onclick="copyCpaExample()">复制调用示例</button>
       </div>
@@ -626,6 +637,9 @@ function providerListField(name, label, value = []) {
 function providerCheck(name, label, checked = false) {
   return `<label style="display:inline-flex;align-items:center;gap:8px"><input data-field="${name}" type="checkbox" ${checked ? "checked" : ""}>${label}</label>`;
 }
+function escapeAttr(value) {
+  return String(value ?? "").replaceAll("&", "&amp;").replaceAll('"', "&quot;").replaceAll("<", "&lt;");
+}
 function renderProviders(providers) {
   $("providers").innerHTML = providers.map((provider, index) => providerHtml(provider, index)).join("") || `<div class="empty">还没有邮箱 Provider，点击“添加邮箱 Provider”开始配置。</div>`;
 }
@@ -698,6 +712,51 @@ function applyMailJson() {
   renderProviders(mail.providers || []);
   updateMailJson(true);
 }
+function renderCliproxyUploadTargets(targets) {
+  const rows = Array.isArray(targets) ? targets : [];
+  $("cliproxyUploadTargets").innerHTML = rows.map((target, index) => `<div class="provider cliproxy-upload-target" data-index="${index}" data-id="${escapeAttr(target.id || "")}">
+    <div class="provider-head">
+      <label style="display:inline-flex;align-items:center;gap:8px"><input data-field="enabled" type="checkbox" ${target.enabled !== false ? "checked" : ""}>启用</label>
+      <div class="actions">
+        <button class="danger" onclick="deleteCliproxyUploadTarget(${index})">删除</button>
+      </div>
+    </div>
+    <div class="grid two">
+      <label>名称
+        <input data-field="name" value="${escapeAttr(target.name || "")}" placeholder="主号池 / 备用号池">
+      </label>
+      <label>Base URL
+        <input data-field="base_url" value="${escapeAttr(target.base_url || "")}" placeholder="http://your-cliproxyapi:8317">
+      </label>
+      <label>Management Key
+        <input data-field="secret_key" value="${escapeAttr(target.secret_key || "")}" placeholder="CLIProxyAPI 管理密钥">
+      </label>
+      <label>请求超时秒数
+        <input data-field="timeout" type="number" min="3" value="${Number(target.timeout || 30)}">
+      </label>
+    </div>
+  </div>`).join("") || `<div class="empty">未配置上游 CLIProxyAPI。注册成功后只会写入本地号池。</div>`;
+}
+function readCliproxyUploadTargets() {
+  return [...document.querySelectorAll(".cliproxy-upload-target")].map((el) => ({
+    id: el.dataset.id || "",
+    enabled: el.querySelector('[data-field="enabled"]').checked,
+    name: el.querySelector('[data-field="name"]').value.trim(),
+    base_url: el.querySelector('[data-field="base_url"]').value.trim(),
+    secret_key: el.querySelector('[data-field="secret_key"]').value.trim(),
+    timeout: Number(el.querySelector('[data-field="timeout"]').value || 30)
+  })).filter((item) => item.name || item.base_url || item.secret_key);
+}
+function addCliproxyUploadTarget() {
+  const targets = readCliproxyUploadTargets();
+  targets.push({ enabled: true, name: "", base_url: "", secret_key: "", timeout: 30 });
+  renderCliproxyUploadTargets(targets);
+}
+function deleteCliproxyUploadTarget(index) {
+  const targets = readCliproxyUploadTargets();
+  targets.splice(index, 1);
+  renderCliproxyUploadTargets(targets);
+}
 async function saveRegister() {
   const body = {
     mode: $("mode").value,
@@ -731,6 +790,7 @@ async function loadSettings() {
   $("settings_auto_remove_invalid_accounts").checked = Boolean(settingsCache.auto_remove_invalid_accounts);
   $("settings_auto_remove_rate_limited_accounts").checked = Boolean(settingsCache.auto_remove_rate_limited_accounts);
   $("settings_cpa_secret_key").value = settingsCache.cpa_secret_key || "";
+  renderCliproxyUploadTargets(settingsCache.cliproxy_upload_targets || []);
   renderCpaUrls();
 }
 async function saveSettings() {
@@ -740,7 +800,8 @@ async function saveSettings() {
     refresh_account_interval_minutes: Number($("settings_refresh_account_interval_minutes").value || 0),
     auto_remove_invalid_accounts: $("settings_auto_remove_invalid_accounts").checked,
     auto_remove_rate_limited_accounts: $("settings_auto_remove_rate_limited_accounts").checked,
-    cpa_secret_key: $("settings_cpa_secret_key").value.trim()
+    cpa_secret_key: $("settings_cpa_secret_key").value.trim(),
+    cliproxy_upload_targets: readCliproxyUploadTargets()
   };
   const data = await api("/api/settings", { method: "POST", body: JSON.stringify(body) });
   settingsCache = data.settings || {};

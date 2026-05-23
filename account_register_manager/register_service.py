@@ -9,7 +9,8 @@ from datetime import datetime, timezone
 from pathlib import Path
 
 from account_register_manager.account_service import account_service
-from account_register_manager.config import DATA_DIR
+from account_register_manager.cliproxy_upload_service import upload_account_to_targets
+from account_register_manager.config import DATA_DIR, config
 from account_register_manager.register import openai_register
 
 REGISTER_FILE = DATA_DIR / "register.json"
@@ -222,6 +223,22 @@ class RegisterService:
             stats["updated_at"] = _now()
             self._save()
 
+    def _upload_registered_account(self, result: dict) -> None:
+        account = result.get("result") if isinstance(result.get("result"), dict) else {}
+        access_token = str(account.get("access_token") or "").strip()
+        targets = config.cliproxy_upload_targets
+        if not access_token or not targets:
+            return
+
+        export_items = account_service.build_export_items([access_token])
+        payload = export_items[0] if export_items else account
+        for item in upload_account_to_targets(targets, payload):
+            target = item.get("target") or "CLIProxyAPI"
+            if item.get("ok"):
+                self._append_log(f"CLIProxyAPI upload ok: {target} -> {item.get('message')}", "green")
+            else:
+                self._append_log(f"CLIProxyAPI upload failed: {target} -> {item.get('message')}", "red")
+
     def _run(self) -> None:
         threads = int(self.get()["threads"])
         submitted, done, success, fail = 0, 0, 0, 0
@@ -245,6 +262,8 @@ class RegisterService:
                         result = future.result()
                         success += 1 if result.get("ok") else 0
                         fail += 0 if result.get("ok") else 1
+                        if result.get("ok"):
+                            self._upload_registered_account(result)
                     except Exception:
                         fail += 1
         self._bump(running=0, done=done, success=success, fail=fail, finished_at=_now())

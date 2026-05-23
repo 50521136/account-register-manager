@@ -5,6 +5,8 @@ import os
 from pathlib import Path
 from typing import Any
 
+from account_register_manager.cliproxy_upload_service import normalize_upload_targets
+
 BASE_DIR = Path(__file__).resolve().parents[1]
 DATA_DIR = BASE_DIR / "data"
 CONFIG_FILE = BASE_DIR / "config.json"
@@ -59,6 +61,10 @@ class Config:
         except Exception:
             return 0
 
+    @property
+    def cliproxy_upload_targets(self) -> list[dict[str, Any]]:
+        return normalize_upload_targets(self.data.get("cliproxy_upload_targets"))
+
     def get_public_settings(self) -> dict[str, Any]:
         return {
             "outbound_proxy": self.outbound_proxy,
@@ -67,6 +73,7 @@ class Config:
             "auto_remove_rate_limited_accounts": self.auto_remove_rate_limited_accounts,
             "cpa_secret_key": self.cpa_secret_key,
             "refresh_account_interval_minutes": self.refresh_account_interval_minutes,
+            "cliproxy_upload_targets": self.cliproxy_upload_targets,
         }
 
     def update(self, updates: dict[str, Any]) -> dict[str, Any]:
@@ -78,9 +85,10 @@ class Config:
             "auto_remove_rate_limited_accounts",
             "cpa_secret_key",
             "refresh_account_interval_minutes",
+            "cliproxy_upload_targets",
         ):
             if key in updates:
-                next_data[key] = updates[key]
+                next_data[key] = normalize_upload_targets(updates[key]) if key == "cliproxy_upload_targets" else updates[key]
         self.data = next_data
         CONFIG_FILE.write_text(json.dumps(self.data, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
         return self.get_public_settings()

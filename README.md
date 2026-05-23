@@ -7,6 +7,7 @@ It contains only:
 - account import, refresh, update, delete, export
 - registration task config/start/stop/reset APIs
 - mail provider and registration worker code used by the registration task
+- optional upload of newly registered accounts to one or more CLIProxyAPI management endpoints
 - a tiny local static admin page
 
 It is not deployed and nothing is started automatically.
@@ -62,6 +63,17 @@ docker compose down
 
 The registration settings are still stored in `data/register.json`. You must configure
 at least one enabled mail provider before starting registration.
+
+If you configure upstream CLIProxyAPI upload targets in Settings, every newly
+registered account is uploaded to each enabled target with:
+
+```text
+POST /v0/management/auth-files?name=<account>.json
+Authorization: Bearer <management-key>
+Content-Type: application/json
+```
+
+No upload is attempted when the target list is empty.
 
 ## Sync Registration Sources
 
