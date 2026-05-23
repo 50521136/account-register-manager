@@ -5,19 +5,34 @@ import threading
 import time
 import uuid
 from concurrent.futures import FIRST_COMPLETED, ThreadPoolExecutor, wait
-from datetime import datetime, timezone
 from pathlib import Path
 
 from account_register_manager.account_service import account_service
 from account_register_manager.cliproxy_upload_service import upload_account_to_targets
 from account_register_manager.config import DATA_DIR, config
 from account_register_manager.register import openai_register
+from account_register_manager.time_utils import now_beijing, now_beijing_iso, parse_datetime
 
 REGISTER_FILE = DATA_DIR / "register.json"
 
 
 def _now() -> str:
-    return datetime.now(timezone.utc).isoformat()
+    return now_beijing_iso()
+
+
+def _normalize_mail_config(raw: object) -> dict:
+    mail = raw if isinstance(raw, dict) else {}
+    next_mail = dict(mail)
+    providers = []
+    for item in mail.get("providers") or []:
+        if not isinstance(item, dict):
+            continue
+        provider_type = str(item.get("type") or "").strip()
+        if not provider_type:
+            continue
+        providers.append({**item, "type": provider_type})
+    next_mail["providers"] = providers
+    return next_mail
 
 
 def _default_config() -> dict:
@@ -55,6 +70,7 @@ def _normalize(raw: dict) -> dict:
     cfg["target_available"] = max(1, int(cfg.get("target_available") or 1))
     cfg["check_interval"] = max(1, int(cfg.get("check_interval") or 5))
     cfg["proxy"] = str(cfg.get("proxy") or "").strip()
+    cfg["mail"] = _normalize_mail_config(cfg.get("mail"))
     cfg["enabled"] = bool(cfg.get("enabled"))
     cfg["stats"] = {**_default_config()["stats"], **(raw.get("stats") if isinstance(raw.get("stats"), dict) else {}), "threads": cfg["threads"]}
     return cfg
@@ -211,10 +227,8 @@ class RegisterService:
             stats = self._config["stats"]
             started_at = str(stats.get("started_at") or "")
             if started_at:
-                try:
-                    elapsed = max(0.0, (datetime.now(timezone.utc) - datetime.fromisoformat(started_at)).total_seconds())
-                except Exception:
-                    elapsed = 0.0
+                parsed_started_at = parse_datetime(started_at)
+                elapsed = max(0.0, (now_beijing() - parsed_started_at).total_seconds()) if parsed_started_at else 0.0
                 success = int(stats.get("success") or 0)
                 fail = int(stats.get("fail") or 0)
                 stats["elapsed_seconds"] = round(elapsed, 1)
@@ -246,6 +260,9 @@ class RegisterService:
             futures = set()
             while True:
                 cfg = self.get()
+                if not (cfg.get("mail") or {}).get("providers"):
+                    self._append_log("注册任务停止：没有可用的邮箱 Provider，请检查邮箱配置是否缺少 type 或未启用。", "red")
+                    break
                 while self.get()["enabled"] and not self._target_reached(cfg, submitted) and len(futures) < threads:
                     submitted += 1
                     futures.add(executor.submit(openai_register.worker, submitted))

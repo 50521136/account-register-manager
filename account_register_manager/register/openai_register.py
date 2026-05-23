@@ -9,7 +9,6 @@ import string
 import threading
 import time
 import uuid
-from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
 from urllib.parse import parse_qs, urlencode, urlparse
@@ -23,6 +22,7 @@ from urllib3.util.retry import Retry
 from account_register_manager.account_service import account_service
 from account_register_manager.config import DATA_DIR
 from account_register_manager.register import mail_provider
+from account_register_manager.time_utils import now_beijing_iso
 
 urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
 base_dir = Path(__file__).resolve().parent
@@ -113,7 +113,7 @@ def log(text: str, color: str = "") -> None:
     with print_lock:
         prefix = colors.get(color, "")
         suffix = "\033[0m" if prefix else ""
-        print(f"{prefix}{datetime.now().strftime('%H:%M:%S')} {text}{suffix}")
+        print(f"{prefix}{now_beijing_iso()[11:19]} {text}{suffix}")
 
 
 def step(index: int, text: str, color: str = "") -> None:
@@ -712,7 +712,7 @@ class PlatformRegistrar:
             "access_token": str(tokens.get("access_token") or "").strip(),
             "refresh_token": str(tokens.get("refresh_token") or "").strip(),
             "id_token": str(tokens.get("id_token") or "").strip(),
-            "created_at": datetime.now(timezone.utc).isoformat(),
+            "created_at": now_beijing_iso(),
         }
 
 

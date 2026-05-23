@@ -908,13 +908,17 @@ class YydsMailProvider(BaseMailProvider):
 def _entries(mail_config: dict) -> list[dict]:
     result: list[dict] = []
     counters: dict[str, int] = {}
-    for item in mail_config["providers"]:
+    for item in mail_config.get("providers") or []:
+        if not isinstance(item, dict):
+            continue
         idx = len(result) + 1
-        t = item.get("type", "")
+        t = str(item.get("type") or "").strip()
+        if not t:
+            continue
         cnt = counters.get(t, 0) + 1
         counters[t] = cnt
         label = f"DDG-{cnt}" if t == "ddg_mail" else f"{t}#{idx}"
-        result.append({**item, "provider_ref": f"{item['type']}#{idx}", "label": label})
+        result.append({**item, "type": t, "provider_ref": f"{t}#{idx}", "label": label})
     return result
 
 

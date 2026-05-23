@@ -8,7 +8,7 @@ import threading
 import uuid
 from concurrent.futures import ThreadPoolExecutor, as_completed
 import zipfile
-from datetime import datetime, timezone
+from datetime import datetime
 from typing import Any, Literal
 
 from contextlib import asynccontextmanager
@@ -24,6 +24,7 @@ from account_register_manager.auth import require_admin
 from account_register_manager.cliproxy_upload_service import upload_account_to_targets
 from account_register_manager.config import BASE_DIR, config
 from account_register_manager.register_service import register_service
+from account_register_manager.time_utils import now_beijing, now_beijing_iso
 
 
 class AccountCreateRequest(BaseModel):
@@ -112,7 +113,7 @@ def _account_zip_bytes(items: list[dict[str, str]]) -> bytes:
 
 
 def _now_iso() -> str:
-    return datetime.now(timezone.utc).isoformat()
+    return now_beijing_iso()
 
 
 class AccountRefreshJobService:
@@ -254,19 +255,19 @@ def create_app() -> FastAPI:
     async def test_proxy(body: ProxyTestRequest, authorization: str | None = Header(default=None)):
         require_admin(authorization)
         proxy = str(body.outbound_proxy if body.outbound_proxy is not None else config.outbound_proxy).strip()
-        started = datetime.now(timezone.utc)
+        started = now_beijing()
         session = curl_requests.Session(impersonate="edge101")
         if proxy:
             session.proxies = {"http": proxy, "https": proxy}
         try:
             response = session.get("https://api.ipify.org?format=json", timeout=12)
-            elapsed_ms = round((datetime.now(timezone.utc) - started).total_seconds() * 1000)
+            elapsed_ms = round((now_beijing() - started).total_seconds() * 1000)
             if response.status_code != 200:
                 return {"ok": False, "status_code": response.status_code, "elapsed_ms": elapsed_ms, "error": response.text[:300]}
             payload = response.json()
             return {"ok": True, "proxy": proxy, "ip": payload.get("ip"), "elapsed_ms": elapsed_ms}
         except Exception as exc:
-            elapsed_ms = round((datetime.now(timezone.utc) - started).total_seconds() * 1000)
+            elapsed_ms = round((now_beijing() - started).total_seconds() * 1000)
             return {"ok": False, "proxy": proxy, "elapsed_ms": elapsed_ms, "error": str(exc)}
         finally:
             session.close()

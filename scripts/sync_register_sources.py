@@ -26,6 +26,7 @@ def find_upstream_root() -> Path:
 
 def patch_openai_register(path: Path) -> None:
     text = path.read_text(encoding="utf-8")
+    text = text.replace("from datetime import datetime, timezone", "from datetime import datetime")
     text = text.replace(
         "from services.account_service import account_service",
         "from account_register_manager.account_service import account_service",
@@ -40,9 +41,23 @@ def patch_openai_register(path: Path) -> None:
             "from account_register_manager.account_service import account_service\n"
             "from account_register_manager.config import DATA_DIR",
         )
+    if "from account_register_manager.time_utils import now_beijing_iso" not in text:
+        text = text.replace(
+            "from account_register_manager.register import mail_provider",
+            "from account_register_manager.register import mail_provider\n"
+            "from account_register_manager.time_utils import now_beijing_iso",
+        )
     text = text.replace(
         'register_config_file = base_dir.parents[1] / "data" / "register.json"',
         'register_config_file = DATA_DIR / "register.json"',
+    )
+    text = text.replace(
+        'print(f"{prefix}{datetime.now().strftime(\'%H:%M:%S\')} {text}{suffix}")',
+        'print(f"{prefix}{now_beijing_iso()[11:19]} {text}{suffix}")',
+    )
+    text = text.replace(
+        '"created_at": datetime.now(timezone.utc).isoformat(),',
+        '"created_at": now_beijing_iso(),',
     )
     path.write_text(text, encoding="utf-8", newline="\n")
 
@@ -52,6 +67,26 @@ def patch_mail_provider(path: Path) -> None:
     text = text.replace(
         "from services.config import DATA_DIR",
         "from account_register_manager.config import DATA_DIR",
+    )
+    text = text.replace(
+        '    for item in mail_config["providers"]:\n'
+        '        idx = len(result) + 1\n'
+        '        t = item.get("type", "")\n'
+        '        cnt = counters.get(t, 0) + 1\n'
+        '        counters[t] = cnt\n'
+        '        label = f"DDG-{cnt}" if t == "ddg_mail" else f"{t}#{idx}"\n'
+        '        result.append({**item, "provider_ref": f"{item[\'type\']}#{idx}", "label": label})',
+        '    for item in mail_config.get("providers") or []:\n'
+        '        if not isinstance(item, dict):\n'
+        '            continue\n'
+        '        idx = len(result) + 1\n'
+        '        t = str(item.get("type") or "").strip()\n'
+        '        if not t:\n'
+        '            continue\n'
+        '        cnt = counters.get(t, 0) + 1\n'
+        '        counters[t] = cnt\n'
+        '        label = f"DDG-{cnt}" if t == "ddg_mail" else f"{t}#{idx}"\n'
+        '        result.append({**item, "type": t, "provider_ref": f"{t}#{idx}", "label": label})',
     )
     path.write_text(text, encoding="utf-8", newline="\n")
 
