@@ -85,6 +85,9 @@ class RegisterService:
         self._target_notice_key = ""
         openai_register.register_log_sink = self._append_log
         self._config = self._load()
+        if self._clear_stale_runtime_state():
+            self._save()
+            self._append_log("检测到上次注册任务未随进程恢复，已重置为停止状态", "yellow")
 
     def _load(self) -> dict:
         try:
@@ -95,6 +98,19 @@ class RegisterService:
     def _save(self) -> None:
         self._store_file.parent.mkdir(parents=True, exist_ok=True)
         self._store_file.write_text(json.dumps(self._config, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
+
+    def _clear_stale_runtime_state(self) -> bool:
+        stats = self._config.get("stats") if isinstance(self._config.get("stats"), dict) else {}
+        was_runtime_active = bool(self._config.get("enabled") or stats.get("running") or stats.get("stopping"))
+        if not was_runtime_active:
+            return False
+        self._config["enabled"] = False
+        stats["running"] = 0
+        stats["stopping"] = False
+        stats["interrupted_at"] = _now()
+        stats["updated_at"] = _now()
+        self._config["stats"] = stats
+        return True
 
     def get(self) -> dict:
         with self._lock:
