@@ -139,7 +139,7 @@ def _make_trace_headers() -> dict[str, str]:
     }
 
 
-from utils.pkce import generate_pkce as _generate_pkce  # noqa: F401
+from account_register_manager.register.pkce import generate_pkce as _generate_pkce  # noqa: F401
 
 
 def _random_password(length: int = 16) -> str:
@@ -213,7 +213,7 @@ def wait_for_code(mailbox: dict) -> str | None:
     return mail_provider.wait_for_code(config["mail"], mailbox)
 
 
-from utils.sentinel import SentinelTokenGenerator, build_sentinel_token as _build_sentinel_token_tuple  # noqa: F401
+from account_register_manager.register.sentinel import SentinelTokenGenerator, build_sentinel_token as _build_sentinel_token_tuple  # noqa: F401
 
 
 def build_sentinel_token(session: requests.Session, device_id: str, flow: str) -> str:
