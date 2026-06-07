@@ -43,7 +43,7 @@
     .stat span { display: block; color: #6b7280; font-size: 12px; }
     .stat strong { display: block; margin-top: 4px; font-size: 22px; }
     .table-wrap { overflow-x: auto; border: 1px solid #e5e7eb; border-radius: 8px; }
-    table { width: 100%; border-collapse: collapse; min-width: 980px; font-size: 13px; background: #fff; }
+    table { width: 100%; border-collapse: collapse; min-width: 1100px; font-size: 13px; background: #fff; }
     th, td { border-bottom: 1px solid #e5e7eb; padding: 9px; text-align: left; vertical-align: middle; }
     th { color: #6b7280; font-size: 12px; background: #f9fafb; }
     td code { font-family: ui-monospace, SFMono-Regular, Consolas, monospace; font-size: 12px; }
@@ -68,9 +68,30 @@
     .login-box h1 { margin-bottom: 6px; }
     .login-box p { margin: 0 0 16px; color: #6b7280; font-size: 13px; }
     @media (max-width: 900px) { header, .split { display: block; } .grid, .grid.two, .stats { grid-template-columns: 1fr; } .auth { max-width: none; margin-top: 10px; } }
+    .modal-overlay { position: fixed; inset: 0; background: rgba(0,0,0,.45); display: flex; align-items: center; justify-content: center; z-index: 9999; }
+    .modal-overlay.hidden { display: none; }
+    .modal-box { background: #fff; border-radius: 10px; padding: 22px; width: min(480px, calc(100vw - 32px)); box-shadow: 0 8px 32px rgba(0,0,0,.18); }
+    .modal-box h3 { margin: 0 0 14px; font-size: 17px; }
+    .modal-box label { margin-bottom: 12px; display: block; }
+    .modal-box .actions { margin-top: 16px; display: flex; gap: 8px; justify-content: flex-end; }
+    .modal-box textarea { width: 100%; min-height: 120px; font-family: ui-monospace, SFMono-Regular, Consolas, monospace; font-size: 12px; border: 1px solid #cfd6df; border-radius: 6px; padding: 9px 10px; resize: vertical; }
+    .modal-error { color: #b91c1c; font-size: 13px; margin-top: 8px; }
+    .modal-msg { font-size: 14px; color: #374151; line-height: 1.5; margin-bottom: 16px; }
   </style>
 </head>
 <body>
+<div id="modalOverlay" class="modal-overlay hidden" onclick="if(event.target===this)closeModal()">
+  <div class="modal-box">
+    <h3 id="modalTitle"></h3>
+    <div id="modalBody"></div>
+    <div id="modalError" class="modal-error" style="display:none"></div>
+    <div class="actions">
+      <button class="muted" id="modalCancel" onclick="closeModal()">取消</button>
+      <button id="modalConfirm" onclick="modalConfirm()">确定</button>
+    </div>
+  </div>
+</div>
+
 <div id="loginScreen" class="login-screen" style="display:none">
   <div class="login-box">
     <h1>号池与注册机</h1>
@@ -136,7 +157,7 @@
         </div>
       </div>
 
-      <textarea id="tokens" placeholder="每行一个 access_token，或粘贴账号 JSON 对象/数组。支持 access_token、refresh_token、id_token、email、type、status、quota 字段。"></textarea>
+      <textarea id="tokens" placeholder="每行一个 access_token，或粘贴账号 JSON 对象/数组。支持 email、password、access_token、refresh_token、id_token、type、status、quota 字段。"></textarea>
       <div class="actions" style="margin-top:10px">
         <button onclick="addAccounts()">导入并刷新</button>
         <button class="secondary" onclick="addAccounts(false)">只导入不刷新</button>
@@ -191,6 +212,7 @@
                   <option value="gptmail">gptmail</option>
                   <option value="yyds_mail">yyds_mail</option>
                   <option value="ddg_mail">ddg_mail</option>
+                  <option value="xunmail">xunmail</option>
                 </select>
               </label>
               <button class="secondary" onclick="addProvider()">添加邮箱 Provider</button>
@@ -204,6 +226,14 @@
             <label>User-Agent<input id="mail_user_agent" placeholder="Mozilla/5.0"></label>
           </div>
           <div id="providers"></div>
+          <div id="xunmailImport" style="margin-top:12px">
+            <label>批量导入 xunmail（每行一个，格式：邮箱----密码----Client ID----Refresh Token）
+              <textarea id="xunmailImportText" placeholder="user@example.com----mail-password----client-id----refresh-token" style="min-height:80px"></textarea>
+            </label>
+            <div class="actions" style="margin-top:6px">
+              <button class="secondary" onclick="importXunmailProviders()">添加为 xunmail Provider</button>
+            </div>
+          </div>
         </section>
 
         <details style="margin-top:12px">
@@ -330,7 +360,8 @@ const providerDefaults = {
   duckmail: { type: "duckmail", enable: true, api_key: "", default_domain: "duckmail.sbs" },
   gptmail: { type: "gptmail", enable: true, api_key: "", default_domain: "" },
   yyds_mail: { type: "yyds_mail", enable: true, api_base: "https://maliapi.215.im/v1", api_key: "", domain: [], subdomain: "", wildcard: false },
-  ddg_mail: { type: "ddg_mail", enable: true, ddg_token: "", cf_api_base: "", cf_inbox_jwt: "", admin_password: "", cf_domain: [] }
+  ddg_mail: { type: "ddg_mail", enable: true, ddg_token: "", cf_api_base: "", cf_inbox_jwt: "", admin_password: "", cf_domain: [] },
+  xunmail: { type: "xunmail", enable: true, email: "", mail_password: "", client_id: "", refresh_token: "" }
 };
 const providerNotes = {
   tempmail_lol: "需要 API Key；Domain 可留空使用服务默认域名，也可一行一个域名。",
@@ -341,7 +372,8 @@ const providerNotes = {
   duckmail: "需要 API Key；Default Domain 默认 duckmail.sbs。",
   gptmail: "需要 API Key；Default Domain 可选。",
   yyds_mail: "需要 API Base 和 API Key；可配置 Domain、Subdomain、Wildcard。",
-  ddg_mail: "DDG 邮箱别名 + CF 收件箱转发模式；需要 DDG Token 和 CF Inbox JWT。"
+  ddg_mail: "DDG 邮箱别名 + CF 收件箱转发模式；需要 DDG Token 和 CF Inbox JWT。",
+  xunmail: "微软邮箱接码；需要 email、client_id、refresh_token。"
 };
 
 function headers(json = true) {
@@ -371,7 +403,76 @@ function showTab(name) {
   if (name === "register") loadRegister().catch(showError);
   if (name === "settings") loadSettings().catch(showError);
 }
-function showError(error) { alert(error instanceof Error ? error.message : String(error)); }
+let _modalResolve = null;
+function openModal({ title, body, confirmText = "确定", cancelText = "取消", danger = false, onopen = null }) {
+  $("modalTitle").textContent = title;
+  $("modalBody").innerHTML = body;
+  $("modalError").style.display = "none";
+  $("modalCancel").textContent = cancelText;
+  const confirmBtn = $("modalConfirm");
+  confirmBtn.textContent = confirmText;
+  confirmBtn.style.display = "inline-flex";
+  confirmBtn.style.borderColor = danger ? "#c93535" : "#2563eb";
+  confirmBtn.style.background = danger ? "#c93535" : "#2563eb";
+  confirmBtn.disabled = false;
+  $("modalOverlay").classList.remove("hidden");
+  if (onopen) onopen();
+}
+function closeModal() {
+  $("modalOverlay").classList.add("hidden");
+  if (_modalResolve) { _modalResolve(false); _modalResolve = null; }
+}
+function modalConfirm() {
+  if (_modalResolve) { _modalResolve(true); _modalResolve = null; }
+  $("modalOverlay").classList.add("hidden");
+}
+function _showAlert(msg, danger = false) {
+  return new Promise((resolve) => {
+    openModal({
+      title: danger ? "错误" : "提示",
+      body: `<div class="modal-msg">${String(msg).replace(/\n/g, "<br>")}</div>`,
+      confirmText: "好的",
+      cancelText: "",
+      onopen: () => {
+        $("modalCancel").style.display = "none";
+        $("modalConfirm").onclick = () => { $("modalOverlay").classList.add("hidden"); resolve(); };
+      }
+    });
+  });
+}
+function _showPrompt(title, label, defaultValue = "") {
+  return new Promise((resolve) => {
+    _modalResolve = (ok) => {
+      $("modalOverlay").classList.add("hidden");
+      resolve(ok ? $("modalPromptInput").value : null);
+    };
+    openModal({
+      title,
+      body: `<label>${label}<input id="modalPromptInput" value="${String(defaultValue || "").replace(/"/g, "&quot;")}"></label>`,
+      confirmText: "确定",
+      cancelText: "取消",
+      onopen: () => { $("modalPromptInput").focus(); $("modalPromptInput").select(); document.getElementById("modalPromptInput").addEventListener("keydown", (e) => { if (e.key === "Enter") { e.preventDefault(); modalConfirm(); } }); }
+    });
+  });
+}
+function _showConfirm(msg, danger = false) {
+  return new Promise((resolve) => {
+    _modalResolve = (ok) => {
+      $("modalOverlay").classList.add("hidden");
+      resolve(ok);
+    };
+    openModal({ title: "确认", body: `<div class="modal-msg">${msg}</div>`, confirmText: "确定", cancelText: "取消", danger });
+  });
+}
+function showError(error) { _showAlert(error instanceof Error ? error.message : String(error), true); }
+function fmtBeijingTime(isoStr) {
+  try {
+    const d = new Date(isoStr);
+    if (isNaN(d.getTime())) return isoStr;
+    const pad = (n) => String(n).padStart(2, "0");
+    return `${d.getFullYear()}-${pad(d.getMonth()+1)}-${pad(d.getDate())} ${pad(d.getHours())}:${pad(d.getMinutes())}:${pad(d.getSeconds())}`;
+  } catch { return isoStr; }
+}
 window.addEventListener("unhandledrejection", (event) => {
   event.preventDefault();
   showError(event.reason);
@@ -412,6 +513,19 @@ function showApp() {
 function maskToken(token) {
   token = String(token || "");
   return token.length > 26 ? `${token.slice(0, 16)}...${token.slice(-8)}` : token;
+}
+function showTokenModal(token) {
+  openModal({
+    title: "查看 Access Token",
+    body: `<textarea readonly style="min-height:80px">${token || ""}</textarea>`,
+    confirmText: "复制",
+    cancelText: "关闭",
+    onopen: () => {
+      $("modalConfirm").onclick = async () => {
+        try { await navigator.clipboard.writeText(token || ""); await _showAlert("已复制"); } catch { await _showAlert("复制失败，请手动复制"); }
+      };
+    }
+  });
 }
 function selectedTokens() { return [...document.querySelectorAll("[data-token]:checked")].map((el) => el.dataset.token); }
 function allTokens() { return accountsCache.map((item) => item.access_token).filter(Boolean); }
@@ -494,15 +608,17 @@ function renderAccounts() {
     return;
   }
   $("accountsTable").innerHTML = `<div class="table-wrap"><table><thead><tr>
-    <th><input type="checkbox" onchange="toggleAllRows(this.checked)"></th><th>Token</th><th>邮箱</th><th>类型</th><th>状态</th><th>额度</th><th>恢复时间</th><th>成功</th><th>失败</th><th>操作</th>
+    <th><input type="checkbox" onchange="toggleAllRows(this.checked)"></th><th>邮箱</th><th>OpenAI密码</th><th>邮箱密码</th><th>Token</th><th>类型</th><th>状态</th><th>额度</th><th>恢复时间</th><th>成功</th><th>失败</th><th>操作</th>
   </tr></thead><tbody>${rows.map((item) => `<tr>
     <td><input type="checkbox" data-token="${item.access_token}"></td>
-    <td><code title="${item.access_token}">${maskToken(item.access_token)}</code></td>
     <td>${item.email || "-"}</td>
+    <td>${item.password ? `<code>${item.password}</code>` : "-"}</td>
+    <td>${item.mail_password ? `<code>${item.mail_password}</code>` : "-"}</td>
+    <td><code>${maskToken(item.access_token)}</code> <button class="muted" style="padding:2px 6px;font-size:11px" onclick="showTokenModal('${item.access_token}')">显示</button></td>
     <td><span class="badge">${item.type || "free"}</span></td>
     <td><span class="badge ${statusClass(item.status)}">${item.status || "正常"}</span></td>
     <td>${quotaValue(item)}</td>
-    <td>${item.restore_at || "-"}</td>
+    <td>${item.restore_at ? fmtBeijingTime(item.restore_at) : "-"}</td>
     <td>${item.success || 0}</td>
     <td>${item.fail || 0}</td>
     <td class="actions">
@@ -514,7 +630,7 @@ function renderAccounts() {
 }
 function toggleAllRows(checked) { document.querySelectorAll("[data-token]").forEach((el) => { el.checked = checked; }); }
 function openImportSample() {
-  $("tokens").value = JSON.stringify([{ email: "user@example.com", access_token: "access_token_here", refresh_token: "refresh_token_here", id_token: "id_token_here", type: "codex", status: "正常", quota: 0 }], null, 2);
+  $("tokens").value = JSON.stringify([{ email: "user@example.com", password: "your_password", access_token: "access_token_here", refresh_token: "refresh_token_here", id_token: "id_token_here", type: "codex", status: "正常", quota: 0 }], null, 2);
 }
 async function addAccounts(refresh = true) {
   const text = $("tokens").value.trim();
@@ -545,7 +661,7 @@ async function refreshAccounts(tokens) {
 }
 async function deleteTokens(tokens) {
   if (!tokens.length) return showError("请先选择账号");
-  if (!confirm(`确定删除 ${tokens.length} 个账号？`)) return;
+  if (!await _showConfirm(`确定删除 ${tokens.length} 个账号？`, true)) return;
   const data = await api("/api/accounts", { method: "DELETE", body: JSON.stringify({ tokens }) });
   accountsCache = data.items || [];
   renderAccounts();
@@ -553,13 +669,86 @@ async function deleteTokens(tokens) {
 async function editAccount(token) {
   const item = accountsCache.find((row) => row.access_token === token);
   if (!item) return;
-  const status = prompt("状态：正常 / 限流 / 异常 / 禁用", item.status || "正常");
+  const status = await _showPrompt("编辑账号状态", "状态：正常 / 限流 / 异常 / 禁用", item.status || "正常");
   if (!status) return;
-  const quotaText = prompt("额度", String(item.quota || 0));
+  const quotaText = await _showPrompt("编辑账号额度", "额度", String(item.quota || 0));
   const quota = Number(quotaText);
   const data = await api("/api/accounts/update", { method: "POST", body: JSON.stringify({ access_token: token, status, quota: Number.isFinite(quota) ? quota : item.quota, type: item.type || "free" }) });
   accountsCache = data.items || [];
   renderAccounts();
+}
+async function checkAccountCode(token, email) {
+  if (!email || !/@(outlook|hotmail|live|msn)\./i.test(email)) {
+    await _showAlert("验证码查询目前仅支持 outlook / hotmail / live / msn 邮箱。", true);
+    return;
+  }
+  const account = accountsCache.find((a) => a.access_token === token);
+  const provider = currentProviders().find((item) => item.type === "xunmail" && String(item.email || "").toLowerCase() === String(email || "").toLowerCase());
+  const providerClientId = String(provider?.client_id || "").trim();
+  const accountClientId = String(account?.xunmail_client_id || "").trim();
+  const savedClientId = providerClientId || accountClientId;
+  const savedRefreshToken = providerClientId ? (provider?.refresh_token || "") : (account?.xunmail_refresh_token || "");
+  openModal({
+    title: `验证码查询 - ${email}`,
+    body: `<div style="margin-bottom:12px;font-size:13px;color:#6b7280">请输入该邮箱的 xunmail 凭证（首次填写后会保存，下次自动填充）：</div>
+      <label style="margin-bottom:10px;display:block">Client ID<input id="checkCodeClientId" type="text" value="${savedClientId}" placeholder="your-client-id" style="font-family:ui-monospace,SFMono-Regular,Consolas,monospace;font-size:12px"></label>
+      <label style="margin-bottom:12px;display:block">Refresh Token<input id="checkCodeRefreshToken" type="password" value="${savedRefreshToken}" placeholder="M.C534_..." style="font-family:ui-monospace,SFMono-Regular,Consolas,monospace;font-size:12px"></label>`,
+    confirmText: "查询", cancelText: "关闭",
+    onopen: () => { $("checkCodeClientId").focus(); if (savedClientId) $("checkCodeClientId").select(); }
+  });
+  _modalResolve = async (ok) => {
+    $("modalOverlay").classList.add("hidden");
+    if (!ok) return;
+    const clientId = ($("checkCodeClientId").value || "").trim();
+    const refreshToken = ($("checkCodeRefreshToken").value || "").trim();
+    if (!clientId || !refreshToken) {
+      await _showAlert("请填写 Client ID 和 Refresh Token", true);
+      return;
+    }
+    try {
+      const data = await api("/api/accounts/check-code", { method: "POST", body: JSON.stringify({ access_token: token, client_id: clientId, refresh_token: refreshToken }) });
+      renderCodeResults(data, token, email);
+    } catch (error) {
+      await _showAlert(error instanceof Error ? error.message : String(error), true);
+    }
+  };
+}
+function renderCodeResults(data, token, email) {
+  const codes = data.codes || [];
+  if (!codes.length) {
+    $("modalBody").innerHTML = `<div style="padding:20px 0;text-align:center;color:#6b7280">
+      <p>没有找到验证码邮件。</p>
+      <p style="margin-top:8px;font-size:12px">可能原因：收件箱和垃圾箱都没有 OTP 邮件，或 xunmail 配置不完整。</p>
+    </div>`;
+    $("modalConfirm").style.display = "none";
+    return;
+  }
+  const total = data.total || 0;
+  const html = codes.map((c) => {
+    const date = c.time ? (() => {
+      try {
+        const d = new Date(c.time);
+        return isNaN(d.getTime()) ? c.time : `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,"0")}-${String(d.getDate()).padStart(2,"0")} ${String(d.getHours()).padStart(2,"0")}:${String(d.getMinutes()).padStart(2,"0")}`;
+      } catch { return c.time; }
+    })() : "-";
+    const isJunk = c.folder === "Junk";
+    return `<div style="border:1px solid ${isJunk ? "#fde68a" : "#e5e7eb"};border-radius:8px;padding:14px;margin-bottom:10px;background:${isJunk ? "#fffbeb" : "#fff"}">
+      <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:8px">
+        <span style="font-family:ui-monospace,SFMono-Regular,Consolas,monospace;font-size:28px;font-weight:bold;color:#111827;letter-spacing:4px">${c.code}</span>
+        <span style="font-size:12px;color:#6b7280">${c.folder}</span>
+      </div>
+      <div style="font-size:12px;color:#9ca3af">发件人：${c.sender || "-"}</div>
+      <div style="font-size:12px;color:#9ca3af;max-width:100%;overflow:hidden;text-overflow:ellipsis;white-space:nowrap" title="${c.subject || ""}">主题：${c.subject || "-"}</div>
+      <div style="font-size:12px;color:#9ca3af">时间：${date}</div>
+    </div>`;
+  }).join("");
+  $("modalBody").innerHTML = `<div style="margin-bottom:12px;font-size:13px;color:#6b7280">找到 ${codes.length} 条验证码记录：</div>
+    <div style="max-height:420px;overflow:auto">${html}</div>`;
+  $("modalConfirm").style.display = "inline-flex";
+  $("modalConfirm").onclick = async () => {
+    $("modalOverlay").classList.add("hidden");
+    await checkAccountCode(token, email);
+  };
 }
 async function exportAccounts(format, tokens) {
   if (!tokens.length) return showError("没有可导出的账号");
@@ -571,7 +760,6 @@ async function exportAccounts(format, tokens) {
   a.click();
   URL.revokeObjectURL(url);
 }
-
 async function loadRegister() {
   const data = await api("/api/register");
   registerCache = data.register;
@@ -586,7 +774,7 @@ async function loadRegister() {
   $("stopButton").textContent = stopping ? "停止中..." : "停止";
   $("stopButton").disabled = Boolean(!cfg.enabled || stopping);
   renderRegisterStats(cfg.stats || {});
-  $("registerLog").textContent = (cfg.logs || []).length ? (cfg.logs || []).slice().reverse().map((line) => `${line.time} ${line.text}`).join("\n") : "暂无日志";
+  $("registerLog").textContent = (cfg.logs || []).length ? (cfg.logs || []).slice().reverse().map((line) => `[${fmtBeijingTime(line.time)}] ${line.text}`).join("\n") : "暂无日志";
   if (!registerDirty || !registerHydrated) {
     hydrateRegisterForm(cfg);
   }
@@ -661,6 +849,7 @@ function providerHtml(provider, index) {
   if (type === "inbucket") fields += providerCheck("random_subdomain", "启用随机子域名", provider.random_subdomain ?? true);
   if (type === "yyds_mail") fields += providerField("subdomain", "Subdomain", provider.subdomain) + providerCheck("wildcard", "Wildcard", provider.wildcard);
   if (type === "ddg_mail") fields += providerField("ddg_token", "DDG Token", provider.ddg_token) + providerField("cf_api_base", "CF API Base", provider.cf_api_base || provider.api_base) + providerField("cf_inbox_jwt", "CF Inbox JWT", provider.cf_inbox_jwt) + providerField("admin_password", "Admin Password", provider.admin_password) + providerListField("cf_domain", "CF Domain 列表", provider.cf_domain);
+  if (type === "xunmail") fields += providerField("email", "微软邮箱", provider.email) + providerField("mail_password", "邮箱密码", provider.mail_password || provider.password) + providerField("client_id", "Client ID", provider.client_id) + providerField("refresh_token", "Refresh Token", provider.refresh_token);
   return `<div class="provider" data-index="${index}">
     <div class="provider-head">
       <label><input data-field="enable" type="checkbox" ${provider.enable !== false ? "checked" : ""}>启用</label>
@@ -690,6 +879,34 @@ function addProvider() {
   providers.push({ ...providerDefaults[type] });
   renderProviders(providers);
   updateMailJson(true);
+}
+function parseXunmailImportLine(line) {
+  const parts = line.split("----").map((part) => part.trim());
+  const email = parts[0] || "";
+  if (!email) return null;
+  const mail_password = parts.length >= 4 ? (parts[1] || "") : "";
+  const client_id = parts.length >= 4 ? (parts[2] || "") : (parts[1] || "");
+  const refresh_token = parts.length >= 4 ? parts.slice(3).join("----").trim() : (parts[2] || "");
+  if (!client_id || !refresh_token) return null;
+  return { email, mail_password, client_id, refresh_token };
+}
+function importXunmailProviders() {
+  const text = $("xunmailImportText").value.trim();
+  if (!text) return showError("请先粘贴 xunmail 账号");
+  const providers = currentProviders();
+  const lines = text.split(/\n/).filter(Boolean);
+  let added = 0;
+  for (const line of lines) {
+    const parsed = parseXunmailImportLine(line);
+    if (!parsed) continue;
+    const { email, mail_password, client_id, refresh_token } = parsed;
+    providers.push({ type: "xunmail", enable: true, email, mail_password, client_id, refresh_token, provider_ref: `xunmail#${added + 1}`, label: `xunmail#${added + 1}` });
+    added++;
+  }
+  if (!added) return showError("没有可导入的有效 xunmail 账号");
+  renderProviders(providers);
+  updateMailJson(true);
+  $("xunmailImportText").value = "";
 }
 function deleteProvider(index) {
   const providers = currentProviders();
@@ -788,7 +1005,7 @@ async function saveRegister() {
   await loadRegister();
 }
 async function startRegister() {
-  if (registerDirty && !confirm("当前注册机配置还没有保存。是否先保存配置并启动？")) return;
+  if (registerDirty && !await _showConfirm("当前注册机配置还没有保存。是否先保存配置并启动？")) return;
   if (registerDirty) await saveRegister();
   await api("/api/register/start", { method: "POST", body: "{}" });
   await loadRegister();
@@ -812,7 +1029,7 @@ async function saveSettings() {
   const data = await api("/api/settings", { method: "POST", body: JSON.stringify(settingsBody()) });
   settingsCache = data.settings || {};
   await loadSettings();
-  alert("设置已保存。账号刷新会在下一次请求时使用新的出口代理。");
+  await _showAlert("设置已保存。账号刷新会在下一次请求时使用新的出口代理。");
 }
 async function manualSyncCliproxyUploadTargets() {
   const button = $("cliproxyManualSyncButton");
@@ -884,9 +1101,9 @@ async function copyCpaExample() {
   const text = $("cpaExample").textContent;
   try {
     await navigator.clipboard.writeText(text);
-    alert("已复制调用示例");
+    await _showAlert("已复制调用示例");
   } catch {
-    prompt("复制调用示例", text);
+    await _showPrompt("复制调用示例", "调用示例", text);
   }
 }
 

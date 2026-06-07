@@ -59,7 +59,11 @@ class AccountService:
     def _normalize_account(self, item: dict[str, Any]) -> dict[str, Any] | None:
         access_token = _clean_string(item.get("access_token") or item.get("accessToken"))
         if not access_token:
-            return None
+            session_token = _clean_string(item.get("session_token"))
+            if session_token:
+                access_token = session_token
+            else:
+                return None
         normalized = dict(item)
         normalized.pop("accessToken", None)
         normalized["access_token"] = access_token
@@ -185,24 +189,43 @@ class AccountService:
             access_token = _clean_string(account.get("access_token"))
             id_token = _clean_string(account.get("id_token"))
             refresh_token = _clean_string(account.get("refresh_token"))
-            if not access_token or not refresh_token or not id_token:
+            session_token = _clean_string(account.get("session_token"))
+            email = _clean_string(account.get("email"))
+            password = _clean_string(account.get("password"))
+            msal_params = _clean_string(account.get("msal_params"))
+
+            has_full_tokens = access_token and refresh_token and id_token
+            has_microsoft_token = session_token or (email and password)
+
+            if not has_full_tokens and not has_microsoft_token:
                 continue
-            access_claims = _decode_jwt_payload(access_token)
-            id_claims = _decode_jwt_payload(id_token)
-            access_auth = access_claims.get("https://api.openai.com/auth") if isinstance(access_claims.get("https://api.openai.com/auth"), dict) else {}
-            profile = access_claims.get("https://api.openai.com/profile") if isinstance(access_claims.get("https://api.openai.com/profile"), dict) else {}
-            out.append(
-                {
-                    "type": _clean_string(account.get("export_type")) or "codex",
-                    "email": _clean_string(account.get("email")) or _clean_string(profile.get("email")) or _clean_string(id_claims.get("email")),
-                    "expired": _clean_string(account.get("expired")) or _format_timestamp(access_claims.get("exp")),
-                    "id_token": id_token,
-                    "account_id": _clean_string(account.get("account_id")) or _clean_string(access_auth.get("chatgpt_account_id")),
-                    "access_token": access_token,
-                    "last_refresh": _clean_string(account.get("last_refresh")) or _format_timestamp(access_claims.get("iat")),
-                    "refresh_token": refresh_token,
-                }
-            )
+
+            if has_full_tokens:
+                access_claims = _decode_jwt_payload(access_token)
+                id_claims = _decode_jwt_payload(id_token)
+                access_auth = access_claims.get("https://api.openai.com/auth") if isinstance(access_claims.get("https://api.openai.com/auth"), dict) else {}
+                profile = access_claims.get("https://api.openai.com/profile") if isinstance(access_claims.get("https://api.openai.com/profile"), dict) else {}
+                out.append(
+                    {
+                        "type": _clean_string(account.get("export_type")) or "codex",
+                        "email": _clean_string(account.get("email")) or _clean_string(profile.get("email")) or _clean_string(id_claims.get("email")),
+                        "expired": _clean_string(account.get("expired")) or _format_timestamp(access_claims.get("exp")),
+                        "id_token": id_token,
+                        "account_id": _clean_string(account.get("account_id")) or _clean_string(access_auth.get("chatgpt_account_id")),
+                        "access_token": access_token,
+                        "last_refresh": _clean_string(account.get("last_refresh")) or _format_timestamp(access_claims.get("iat")),
+                        "refresh_token": refresh_token,
+                    }
+                )
+            elif has_microsoft_token:
+                out.append(
+                    {
+                        "email": email,
+                        "password": password,
+                        "session_token": session_token,
+                        "msal_params": msal_params,
+                    }
+                )
         return out
 
 

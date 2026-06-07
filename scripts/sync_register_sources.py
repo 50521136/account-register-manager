@@ -35,14 +35,6 @@ def patch_openai_register(path: Path) -> None:
         "from services.register import mail_provider",
         "from account_register_manager.register import mail_provider",
     )
-    text = text.replace(
-        "from utils.pkce import generate_pkce as _generate_pkce",
-        "from account_register_manager.register.pkce import generate_pkce as _generate_pkce",
-    )
-    text = text.replace(
-        "from utils.sentinel import SentinelTokenGenerator, build_sentinel_token as _build_sentinel_token_tuple",
-        "from account_register_manager.register.sentinel import SentinelTokenGenerator, build_sentinel_token as _build_sentinel_token_tuple",
-    )
     if "from account_register_manager.config import DATA_DIR" not in text:
         text = text.replace(
             "from account_register_manager.account_service import account_service",

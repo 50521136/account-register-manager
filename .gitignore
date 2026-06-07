@@ -6,5 +6,6 @@ __pycache__/
 
 config.json
 data/
+.wr/
 
 .upstream-chatgpt2api

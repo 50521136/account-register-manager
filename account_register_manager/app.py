@@ -68,6 +68,12 @@ class RegisterConfigRequest(BaseModel):
     check_interval: int | None = None
 
 
+class CheckCodeRequest(BaseModel):
+    access_token: str = ""
+    client_id: str = ""
+    refresh_token: str = ""
+
+
 class SettingsUpdateRequest(BaseModel):
     outbound_proxy: str | None = None
     image_account_concurrency: int | None = None
@@ -198,6 +204,99 @@ class AccountRefreshJobService:
 
 
 account_refresh_jobs = AccountRefreshJobService()
+
+
+def _query_xunmail_otp(email: str, client_id: str, refresh_token: str) -> dict[str, Any]:
+    """查询微软邮箱最新验证码邮件"""
+    import requests as _req
+    import re as _re
+    from email import message_from_string as _msg_from_string
+    from email import policy as _email_policy
+    from email.utils import parsedate_to_datetime as _parse_email_date
+
+    api_base = "https://www.xunmail.cn/api"
+    headers = {"User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36", "Accept": "application/json", "Content-Type": "application/json"}
+
+    def _fetch_mails(mailbox: str = "INBOX") -> list[dict]:
+        resp = _req.post(
+            f"{api_base}/graph/mail-all",
+            headers=headers,
+            json={"email": email, "client_id": client_id, "refresh_token": refresh_token, "mailbox": mailbox, "top": 20, "db_lookup_scope": "web"},
+            timeout=30,
+        )
+        try:
+            data = resp.json()
+        except Exception:
+            return []
+        if not isinstance(data, dict):
+            return []
+        if not data.get("success"):
+            return []
+        return data.get("mails") or []
+
+    def _extract_code(text: str) -> str | None:
+        text = text.strip()
+        if not text:
+            return None
+        match = _re.search(r"background-color:\s*#F3F3F3[^>]*>[\s\S]*?(\d{6})[\s\S]*?</p>", text, _re.I)
+        if match:
+            return match.group(1)
+        match = _re.search(r"(?:Verification code|code is|代码为|验证码|one-time code|enter this code)[:\s]*(\d{6})", text, _re.I)
+        if match and match.group(1) != "177010":
+            return match.group(1)
+        for code in _re.findall(r">\s*(\d{6})\s*<|(?<![#&])\b(\d{6})\b", text):
+            val = code[0] or code[1]
+            if val and val != "177010":
+                return val
+        return None
+
+    def _parse_content(item: dict) -> tuple[str, str]:
+        html = str(item.get("html") or item.get("body") or "")
+        text = str(item.get("text") or item.get("body_text") or "")
+        if text or html:
+            return text, html
+        raw = str(item.get("raw") or "")
+        if raw:
+            try:
+                parsed = _msg_from_string(raw, policy=_email_policy.default)
+            except Exception:
+                return raw, ""
+            plain: list[str] = []
+            html_parts: list[str] = []
+            for part in parsed.walk() if parsed.is_multipart() else [parsed]:
+                if part.get_content_maintype() == "multipart":
+                    continue
+                try:
+                    payload = part.get_content()
+                except Exception:
+                    payload = ""
+                if not payload:
+                    continue
+                if part.get_content_type() == "text/html":
+                    html_parts.append(str(payload))
+                else:
+                    plain.append(str(payload))
+            return "\n".join(plain).strip(), "\n".join(html_parts).strip()
+        return "", ""
+
+    codes: list[dict[str, Any]] = []
+    for folder in ("INBOX", "Junk"):
+        mails = _fetch_mails(folder)
+        for mail in mails[:10]:
+            subject = str(mail.get("subject") or "")
+            sender = str(mail.get("from") or mail.get("from_email") or "")
+            text, html = _parse_content(mail)
+            content = f"{subject}\n{text}\n{html}"
+            code = _extract_code(content)
+            if code:
+                ts = mail.get("timestamp") or mail.get("created_at") or ""
+                codes.append({"code": code, "subject": subject, "sender": sender, "folder": folder, "time": str(ts)})
+            if len(codes) >= 10:
+                break
+        if len(codes) >= 10:
+            break
+
+    return {"email": email, "codes": codes, "total": len(codes)}
 
 
 def start_periodic_account_refresh(stop_event: threading.Event) -> threading.Thread:
@@ -465,6 +564,54 @@ def create_app() -> FastAPI:
             if requested in {safe_name, safe_name.removesuffix(".json"), item.get("email", ""), item.get("account_id", "")}:
                 return item
         raise HTTPException(status_code=404, detail={"error": "auth file not found"})
+
+    @app.post("/api/accounts/check-code")
+    async def check_account_code(body: CheckCodeRequest, authorization: str | None = Header(default=None)):
+        require_admin(authorization)
+        access_token = str(body.access_token or "").strip()
+        if not access_token:
+            raise HTTPException(status_code=400, detail={"error": "access_token is required"})
+
+        account = account_service.get_account(access_token)
+        if account is None:
+            raise HTTPException(status_code=404, detail={"error": "account not found"})
+
+        email = str(account.get("email") or "").strip()
+        if not email or ("@outlook." not in email.lower() and "@hotmail." not in email.lower() and "@live." not in email.lower() and "@msn." not in email.lower()):
+            raise HTTPException(status_code=400, detail={"error": "only outlook/hotmail/live/msn accounts support OTP query"})
+
+        client_id = str(body.client_id or "").strip()
+        refresh_token = str(body.refresh_token or "").strip()
+
+        if not client_id or not refresh_token:
+            reg = register_service.get()
+            providers = ((reg.get("mail") or {}).get("providers") or []) if isinstance(reg.get("mail"), dict) else []
+            email_lower = email.lower()
+            for p in providers:
+                if p.get("type") == "xunmail" and str(p.get("email") or "").strip().lower() == email_lower:
+                    provider_client_id = str(p.get("client_id") or "").strip()
+                    provider_refresh_token = str(p.get("refresh_token") or "").strip()
+                    if provider_client_id and provider_refresh_token:
+                        client_id = provider_client_id
+                        refresh_token = provider_refresh_token
+                        break
+
+        if not client_id or not refresh_token:
+            client_id = str(account.get("xunmail_client_id") or "").strip()
+            refresh_token = str(account.get("xunmail_refresh_token") or "").strip()
+
+        if not client_id or not refresh_token:
+            raise HTTPException(status_code=400, detail={"error": "no xunmail credentials found. Please enter Client ID and Refresh Token, they will be saved for next time."})
+
+        # 如果请求传了凭证，则保存到账号，以后免输入
+        if body.client_id and body.refresh_token:
+            account_service.update_account(access_token, {
+                "xunmail_client_id": str(body.client_id).strip(),
+                "xunmail_refresh_token": str(body.refresh_token).strip(),
+            })
+
+        result = _query_xunmail_otp(email, client_id, refresh_token)
+        return result
 
     return app
 
