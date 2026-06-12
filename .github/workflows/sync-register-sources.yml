@@ -34,4 +34,6 @@ jobs:
         uses: stefanzweifel/git-auto-commit-action@v5
         with:
           commit_message: "sync registration sources from upstream"
-          file_pattern: "account_register_manager/register/*.py"
+          file_pattern: |
+            account_register_manager/register/**
+            scripts/sync_register_sources.py

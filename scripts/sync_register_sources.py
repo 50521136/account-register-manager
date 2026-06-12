@@ -7,6 +7,15 @@ from pathlib import Path
 
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
 TARGET = PROJECT_ROOT / "account_register_manager" / "register"
+UTILS_DIR = TARGET / "utils"
+
+# OpenAI register worker imports a couple of helpers from the upstream
+# ``utils/`` package. ``openai_register.py`` itself does NOT reference any
+# ``utils`` symbol, but its runtime needs (PKCE generation, sentinel PoW
+# token) come from there. We vendor the minimal subset under
+# ``account_register_manager/register/utils/`` and rewrite the imports to
+# use the vendored copy.
+VENDORED_UTILS = ("pkce.py", "sentinel.py")
 
 
 def find_upstream_root() -> Path:
@@ -47,6 +56,16 @@ def patch_openai_register(path: Path) -> None:
             "from account_register_manager.register import mail_provider\n"
             "from account_register_manager.time_utils import now_beijing_iso",
         )
+    # Rewrite the upstream ``utils`` imports to the vendored copy living
+    # next to this module (``account_register_manager/register/utils``).
+    text = text.replace(
+        "from utils.pkce import generate_pkce as _generate_pkce",
+        "from .utils.pkce import generate_pkce as _generate_pkce",
+    )
+    text = text.replace(
+        "from utils.sentinel import SentinelTokenGenerator, build_sentinel_token as _build_sentinel_token_tuple",
+        "from .utils.sentinel import SentinelTokenGenerator, build_sentinel_token as _build_sentinel_token_tuple",
+    )
     text = text.replace(
         'register_config_file = base_dir.parents[1] / "data" / "register.json"',
         'register_config_file = DATA_DIR / "register.json"',
@@ -91,11 +110,32 @@ def patch_mail_provider(path: Path) -> None:
     path.write_text(text, encoding="utf-8", newline="\n")
 
 
+def sync_vendored_utils(upstream_root: Path) -> None:
+    """Copy the small subset of ``utils/`` modules that the register worker
+    needs into ``account_register_manager/register/utils/`` so the package
+    is fully self-contained (no dependency on the upstream checkout)."""
+    UTILS_DIR.mkdir(parents=True, exist_ok=True)
+    # Always keep the package marker file in sync.
+    upstream_init = upstream_root / "utils" / "__init__.py"
+    if upstream_init.is_file():
+        shutil.copy2(upstream_init, UTILS_DIR / "__init__.py")
+    else:
+        # Upstream ships an empty __init__.py; recreate it if missing.
+        (UTILS_DIR / "__init__.py").write_text("", encoding="utf-8")
+    for name in VENDORED_UTILS:
+        src = upstream_root / "utils" / name
+        dst = UTILS_DIR / name
+        if not src.is_file():
+            raise SystemExit(f"upstream file missing: {src}")
+        shutil.copy2(src, dst)
+
+
 def main() -> None:
     upstream_root = find_upstream_root()
     TARGET.mkdir(parents=True, exist_ok=True)
     shutil.copy2(upstream_root / "services" / "register" / "openai_register.py", TARGET / "openai_register.py")
     shutil.copy2(upstream_root / "services" / "register" / "mail_provider.py", TARGET / "mail_provider.py")
+    sync_vendored_utils(upstream_root)
     patch_openai_register(TARGET / "openai_register.py")
     patch_mail_provider(TARGET / "mail_provider.py")
     ok = compileall.compile_dir(str(PROJECT_ROOT / "account_register_manager"), quiet=1)
