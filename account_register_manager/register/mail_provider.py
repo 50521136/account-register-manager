@@ -211,6 +211,56 @@ provider_index = 0
 cloudmail_token_lock = Lock()
 cloudmail_token_cache: dict[str, tuple[str, float]] = {}
 
+# 每个 provider_key 的冷却截止时间（monotonic 秒）。仅限 tempmail_lol 使用。
+_tempmail_cooldown_lock = Lock()
+_tempmail_cooldown: dict[str, float] = {}
+# 主动限流：tempmail.lol v2 key 配额 25 次 / 300 秒。滑动窗口托底，防止上游不返回 429 时打爆配额。
+TEMPMAIL_LOL_RATE_MAX = 25
+TEMPMAIL_LOL_RATE_WINDOW = 300.0
+_tempmail_rate_lock = Lock()
+_tempmail_rate_calls: dict[str, list[float]] = {}
+
+
+def _tempmail_provider_key(provider_ref: str) -> str:
+    return f"tempmail_lol#{provider_ref}"
+
+
+def _set_tempmail_cooldown(provider_ref: str, seconds: float, reason: str) -> None:
+    key = _tempmail_provider_key(provider_ref)
+    until = time.monotonic() + seconds
+    with _tempmail_cooldown_lock:
+        _tempmail_cooldown[key] = until
+    try:
+        print(f"[tempmail_lol] 冷却 {seconds:.0f}s[{provider_ref}]: {reason}", flush=True)
+    except Exception:
+        pass
+
+
+def _tempmail_cooldown_remaining(provider_ref: str) -> float:
+    key = _tempmail_provider_key(provider_ref)
+    with _tempmail_cooldown_lock:
+        until = _tempmail_cooldown.get(key, 0.0)
+    return max(0.0, until - time.monotonic())
+
+
+def _acquire_tempmail_rate_slot(provider_ref: str) -> tuple[bool, float]:
+    """tempmail_lol 滑动窗口限流。返回 (ok, sleep_for_seconds)。
+
+    ok=True 表示已占用一个名额，可发请求。
+    ok=False 表示窗口内已达上限，sleep_for_seconds 表示还需等待多久。
+    """
+    key = _tempmail_provider_key(provider_ref)
+    with _tempmail_rate_lock:
+        now = time.monotonic()
+        history = _tempmail_rate_calls.setdefault(key, [])
+        # 清掉窗口外
+        history[:] = [t for t in history if now - t < TEMPMAIL_LOL_RATE_WINDOW]
+        if len(history) >= TEMPMAIL_LOL_RATE_MAX:
+            sleep_for = TEMPMAIL_LOL_RATE_WINDOW - (now - history[0])
+            return False, max(0.0, sleep_for)
+        history.append(now)
+        return True, 0.0
+
 
 def _config(mail_config: dict) -> dict:
     return {
@@ -700,6 +750,12 @@ class CloudMailGenProvider(BaseMailProvider):
 class TempMailLolProvider(BaseMailProvider):
     name = "tempmail_lol"
 
+    # 上游返回 429/402/403 时进入冷却：默认 5 分钟（与上游 5min/25 配额窗口对齐）。
+    # 如果上游响应头里有 Retry-After，会被解析并覆盖此值。
+    COOLDOWN_ON_LIMIT = 300.0
+    # 上游 5xx 故障：短冷却，避免持续打到故障节点。
+    COOLDOWN_ON_SERVER_ERROR = 30.0
+
     def __init__(self, entry: dict, conf: dict):
         super().__init__(conf, str(entry.get("provider_ref") or ""))
         self.api_key = str(entry.get("api_key") or "").strip()
@@ -716,8 +772,75 @@ class TempMailLolProvider(BaseMailProvider):
             return f"{_random_subdomain_label()}.{text[2:]}", True
         return text, False
 
+    @staticmethod
+    def _parse_retry_after(value: str) -> float | None:
+        """解析 Retry-After header。支持秒数或 HTTP-date。解析失败返回 None。"""
+        text = str(value or "").strip()
+        if not text:
+            return None
+        if text.isdigit():
+            return float(text)
+        try:
+            from email.utils import parsedate_to_datetime
+            target = parsedate_to_datetime(text)
+            now = datetime.now(timezone.utc)
+            delta = (target - now).total_seconds()
+            return max(0.0, delta) if delta > 0 else 0.0
+        except Exception:
+            return None
+
+    def _enter_cooldown(self, seconds: float, reason: str) -> None:
+        _set_tempmail_cooldown(self.provider_ref, seconds, reason)
+
     def _request(self, method: str, path: str, params: dict | None = None, payload: dict | None = None, expected: tuple[int, ...] = (200,)):
+        # 冷却中：直接拒绝，避免无意义请求叠加到上游。
+        remaining = _tempmail_cooldown_remaining(self.provider_ref)
+        if remaining > 0:
+            raise RuntimeError(
+                f"TempMail.lol 冷却中，剩余 {remaining:.0f}s[{self.provider_ref}]"
+            )
+        # 主动滑动窗口限流：先占名额，占不到则 sleep 到下一次窗口空位。
+        ok, sleep_for = _acquire_tempmail_rate_slot(self.provider_ref)
+        if not ok:
+            # sleep 期间不要长时间占用线程，单独 sleep 后 raise 让上层切下一个 provider。
+            try:
+                print(
+                    f"[tempmail_lol] 限流到达 [{self.provider_ref}]，sleep {sleep_for:.0f}s 后 raise",
+                    flush=True,
+                )
+            except Exception:
+                pass
+            time.sleep(min(sleep_for, TEMPMAIL_LOL_RATE_WINDOW))
+            raise RuntimeError(
+                f"TempMail.lol 主动限流 [{self.provider_ref}]，窗口内已达 {TEMPMAIL_LOL_RATE_MAX} 次"
+            )
+
         resp = self.session.request(method.upper(), f"https://api.tempmail.lol/v2{path}", params=params, json=payload, timeout=self.conf["request_timeout"], verify=False)
+
+        # 429 / 402 / 403：上游明确限流或配额耗尽，进入冷却。
+        if resp.status_code in (429, 402, 403):
+            retry_after = self._parse_retry_after(resp.headers.get("Retry-After", ""))
+            cooldown = retry_after if retry_after is not None else self.COOLDOWN_ON_LIMIT
+            # 上限不超过 1 小时，避免异常响应卡死整个 provider。
+            cooldown = min(max(cooldown, 1.0), 3600.0)
+            self._enter_cooldown(
+                cooldown,
+                f"{resp.status_code} from {method} {path}, Retry-After={resp.headers.get('Retry-After', '') or 'n/a'}",
+            )
+            raise RuntimeError(
+                f"TempMail.lol 限流({resp.status_code}) {method} {path}, 已冷却 {cooldown:.0f}s"
+            )
+
+        # 上游故障：短冷却。
+        if resp.status_code in (500, 502, 503, 504):
+            self._enter_cooldown(
+                self.COOLDOWN_ON_SERVER_ERROR,
+                f"{resp.status_code} from {method} {path}",
+            )
+            raise RuntimeError(
+                f"TempMail.lol 请求失败: {method} {path}, HTTP {resp.status_code}, body={resp.text[:300]}"
+            )
+
         if resp.status_code not in expected:
             raise RuntimeError(f"TempMail.lol 请求失败: {method} {path}, HTTP {resp.status_code}, body={resp.text[:300]}")
         data = resp.json()
