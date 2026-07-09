@@ -2,7 +2,7 @@
 
 ## 1. 项目定位
 
-`account-register-manager` 是一个从 `basketikun/chatgpt2api` 中抽离出来的独立账号池与注册管理服务。它主要用于：
+`account-register-manager` 是一个从 `yukkcat/chatgpt2api` 中抽离出来的独立账号池与注册管理服务。它主要用于：
 
 - 管理本地 OpenAI / ChatGPT 账号池。
 - 导入、刷新、编辑、删除和导出账号。
@@ -365,7 +365,7 @@ Authorization: Bearer <auth_key>
 
 ## 12. 维护与上游同步
 
-注册相关源码来自上游 `basketikun/chatgpt2api`，维护脚本为：
+注册相关源码来自上游 `yukkcat/chatgpt2api`，维护脚本为：
 
 ```powershell
 python .\scripts\sync_register_sources.py

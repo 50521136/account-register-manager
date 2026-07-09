@@ -18,7 +18,7 @@ jobs:
       - name: Checkout upstream chatgpt2api
         uses: actions/checkout@v4
         with:
-          repository: basketikun/chatgpt2api
+          repository: yukkcat/chatgpt2api
           path: upstream-chatgpt2api
 
       - name: Configure upstream path

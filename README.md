@@ -1,6 +1,6 @@
 # Account Register Manager
 
-This directory is an extracted standalone subset of `basketikun/chatgpt2api`.
+This directory is an extracted standalone subset of `yukkcat/chatgpt2api`.
 It contains only:
 
 - account pool management APIs
@@ -88,5 +88,5 @@ The script copies `services/register/openai_register.py` and
 adaptations.
 
 This repository also includes a GitHub Actions workflow that can sync those
-files automatically from `basketikun/chatgpt2api` on a schedule or by manual
+files automatically from `yukkcat/chatgpt2api` on a schedule or by manual
 dispatch.
