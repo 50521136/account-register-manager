@@ -15,7 +15,7 @@ UTILS_DIR = TARGET / "utils"
 # token) come from there. We vendor the minimal subset under
 # ``account_register_manager/register/utils/`` and rewrite the imports to
 # use the vendored copy.
-VENDORED_UTILS = ("pkce.py", "sentinel.py")
+VENDORED_UTILS = ("pkce.py", "sentinel.py", "turnstile.py")
 
 
 def find_upstream_root() -> Path:
@@ -41,15 +41,26 @@ def patch_openai_register(path: Path) -> None:
         "from account_register_manager.account_service import account_service",
     )
     text = text.replace(
+        "from services.json_file import read_json_object",
+        "from account_register_manager.json_file import read_json_object",
+    )
+    text = text.replace(
         "from services.register import mail_provider",
         "from account_register_manager.register import mail_provider",
     )
     if "from account_register_manager.config import DATA_DIR" not in text:
-        text = text.replace(
-            "from account_register_manager.account_service import account_service",
-            "from account_register_manager.account_service import account_service\n"
-            "from account_register_manager.config import DATA_DIR",
-        )
+        if "from utils.timezone import TIME_FORMAT, beijing_now_str" in text:
+            text = text.replace(
+                "from utils.timezone import TIME_FORMAT, beijing_now_str",
+                "from account_register_manager.config import DATA_DIR\n"
+                "from account_register_manager.time_utils import now_beijing_iso",
+            )
+        else:
+            text = text.replace(
+                "from account_register_manager.account_service import account_service",
+                "from account_register_manager.account_service import account_service\n"
+                "from account_register_manager.config import DATA_DIR",
+            )
     text = text.replace(
         "from services.proxy_service import ClearanceBundle, proxy_settings",
         "from account_register_manager.proxy_service import ClearanceBundle, proxy_settings",
@@ -67,6 +78,10 @@ def patch_openai_register(path: Path) -> None:
         "from .utils.pkce import generate_pkce as _generate_pkce",
     )
     text = text.replace(
+        "from utils.sentinel import (",
+        "from .utils.sentinel import (",
+    )
+    text = text.replace(
         "from utils.sentinel import SentinelTokenGenerator, build_sentinel_token as _build_sentinel_token_tuple",
         "from .utils.sentinel import SentinelTokenGenerator, build_sentinel_token as _build_sentinel_token_tuple",
     )
@@ -76,6 +91,10 @@ def patch_openai_register(path: Path) -> None:
     )
     text = text.replace(
         'print(f"{prefix}{datetime.now().strftime(\'%H:%M:%S\')} {text}{suffix}")',
+        'print(f"{prefix}{now_beijing_iso()[11:19]} {text}{suffix}")',
+    )
+    text = text.replace(
+        'print(f"{prefix}{beijing_now_str(TIME_FORMAT)} {text}{suffix}")',
         'print(f"{prefix}{now_beijing_iso()[11:19]} {text}{suffix}")',
     )
     text = text.replace(
@@ -90,6 +109,14 @@ def patch_mail_provider(path: Path) -> None:
     text = text.replace(
         "from services.config import DATA_DIR",
         "from account_register_manager.config import DATA_DIR",
+    )
+    text = text.replace(
+        "from services.json_file import read_json_file, write_json_file",
+        "from account_register_manager.json_file import read_json_file, write_json_file",
+    )
+    text = text.replace(
+        "from services.proxy_service import proxy_settings",
+        "from account_register_manager.proxy_service import proxy_settings",
     )
     text = text.replace(
         '    for item in mail_config["providers"]:\n'
@@ -110,6 +137,39 @@ def patch_mail_provider(path: Path) -> None:
         '        counters[t] = cnt\n'
         '        label = f"DDG-{cnt}" if t == "ddg_mail" else f"{t}#{idx}"\n'
         '        result.append({**item, "type": t, "provider_ref": f"{t}#{idx}", "label": label})',
+    )
+    text = text.replace(
+        '    for item in mail_config["providers"]:\n'
+        '        idx = len(result) + 1\n'
+        '        t = item.get("type", "")\n'
+        '        cnt = counters.get(t, 0) + 1\n'
+        '        counters[t] = cnt\n'
+        '        label = f"DDG-{cnt}" if t == "ddg_mail" else f"{t}#{idx}"\n'
+        '        stable_id = str(item.get("id") or item.get("provider_id") or "").strip()\n'
+        '        provider_ref = f"{item[\'type\']}:{stable_id}" if stable_id else f"{item[\'type\']}#{idx}"\n'
+        '        result.append({**item, "provider_ref": provider_ref, "label": label})',
+        '    for item in mail_config.get("providers") or []:\n'
+        '        if not isinstance(item, dict):\n'
+        '            continue\n'
+        '        idx = len(result) + 1\n'
+        '        t = str(item.get("type") or "").strip()\n'
+        '        if not t:\n'
+        '            continue\n'
+        '        cnt = counters.get(t, 0) + 1\n'
+        '        counters[t] = cnt\n'
+        '        label = f"DDG-{cnt}" if t == "ddg_mail" else f"{t}#{idx}"\n'
+        '        stable_id = str(item.get("id") or item.get("provider_id") or "").strip()\n'
+        '        provider_ref = f"{t}:{stable_id}" if stable_id else f"{t}#{idx}"\n'
+        '        result.append({**item, "type": t, "provider_ref": provider_ref, "label": label})',
+    )
+    path.write_text(text, encoding="utf-8", newline="\n")
+
+
+def patch_sentinel(path: Path) -> None:
+    text = path.read_text(encoding="utf-8")
+    text = text.replace(
+        "from utils.turnstile import solve_turnstile_token",
+        "from .turnstile import solve_turnstile_token",
     )
     path.write_text(text, encoding="utf-8", newline="\n")
 
@@ -142,6 +202,7 @@ def main() -> None:
     sync_vendored_utils(upstream_root)
     patch_openai_register(TARGET / "openai_register.py")
     patch_mail_provider(TARGET / "mail_provider.py")
+    patch_sentinel(UTILS_DIR / "sentinel.py")
     ok = compileall.compile_dir(str(PROJECT_ROOT / "account_register_manager"), quiet=1)
     if not ok:
         raise SystemExit(1)
