@@ -18,7 +18,7 @@ from curl_cffi import requests
 
 from account_register_manager.account_service import account_service
 from account_register_manager.config import DATA_DIR
-from services.proxy_service import ClearanceBundle, proxy_settings
+from account_register_manager.proxy_service import ClearanceBundle, proxy_settings
 from account_register_manager.register import mail_provider
 from account_register_manager.time_utils import now_beijing_iso
 

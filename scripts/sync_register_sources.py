@@ -50,6 +50,10 @@ def patch_openai_register(path: Path) -> None:
             "from account_register_manager.account_service import account_service\n"
             "from account_register_manager.config import DATA_DIR",
         )
+    text = text.replace(
+        "from services.proxy_service import ClearanceBundle, proxy_settings",
+        "from account_register_manager.proxy_service import ClearanceBundle, proxy_settings",
+    )
     if "from account_register_manager.time_utils import now_beijing_iso" not in text:
         text = text.replace(
             "from account_register_manager.register import mail_provider",
