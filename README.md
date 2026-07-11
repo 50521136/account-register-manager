@@ -45,6 +45,7 @@ Open `http://127.0.0.1:8010/`. The compose file mounts:
 - `./data` to persist account pool and registration settings
 
 FlareSolverr is not bundled. Deploy it separately, then enable it in Settings and enter its external URL.
+Authenticated proxies use a temporary FlareSolverr session; `socks5h://` proxy URLs are converted to `socks5://` for FlareSolverr.
 
 You can also override the login key with an environment variable:
 

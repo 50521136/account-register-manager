@@ -4,9 +4,10 @@ from dataclasses import dataclass, field, replace
 import json
 import threading
 import time
+import uuid
 from typing import Any, Mapping
 from urllib import request as urllib_request
-from urllib.parse import urlparse
+from urllib.parse import unquote, urlparse
 
 from account_register_manager.config import config
 
@@ -18,6 +19,28 @@ def normalize_proxy_url(value: object) -> str:
         return "socks5h://" + proxy[len("socks://") :]
     if lowered.startswith("socks5://"):
         return "socks5h://" + proxy[len("socks5://") :]
+    return proxy
+
+
+def _flaresolverr_proxy_config(value: object) -> dict[str, str]:
+    proxy_url = normalize_proxy_url(value)
+    if not proxy_url:
+        return {}
+    parsed = urlparse(proxy_url)
+    scheme = parsed.scheme.lower()
+    if scheme == "socks5h":
+        scheme = "socks5"
+    if scheme not in {"http", "socks4", "socks5"} or not parsed.hostname:
+        raise RuntimeError("FlareSolverr proxy must use http://, socks4:// or socks5://")
+    try:
+        port = parsed.port
+    except ValueError as exc:
+        raise RuntimeError("FlareSolverr proxy has an invalid port") from exc
+    host = f"[{parsed.hostname}]" if ":" in parsed.hostname else parsed.hostname
+    proxy: dict[str, str] = {"url": f"{scheme}://{host}{f':{port}' if port else ''}"}
+    if parsed.username is not None:
+        proxy["username"] = unquote(parsed.username)
+        proxy["password"] = unquote(parsed.password or "")
     return proxy
 
 
@@ -142,16 +165,60 @@ class FlareSolverrClearanceProvider:
             raise RuntimeError("target URL must be an HTTP(S) URL")
 
         timeout = max(1, min(300, int(timeout_sec or 60)))
-        proxy_url = normalize_proxy_url(proxy_url)
+        bundle_proxy_url = normalize_proxy_url(proxy_url)
+        proxy = _flaresolverr_proxy_config(bundle_proxy_url)
         payload: dict[str, object] = {
             "cmd": "request.get",
             "url": parsed_target.geturl(),
             "maxTimeout": timeout * 1000,
         }
-        if proxy_url:
-            payload["proxy"] = {"url": proxy_url}
+        session_id = ""
+        if proxy.get("username") is not None:
+            session_id = f"account-register-{uuid.uuid4().hex}"
+            self._post_command(
+                {
+                    "cmd": "sessions.create",
+                    "session": session_id,
+                    "proxy": proxy,
+                },
+                timeout,
+            )
+            payload["session"] = session_id
+        elif proxy:
+            payload["proxy"] = {"url": proxy["url"]}
 
-        endpoint = self.flaresolverr_url if parsed_service.path.rstrip("/").endswith("/v1") else f"{self.flaresolverr_url}/v1"
+        try:
+            data = self._post_command(payload, timeout)
+        finally:
+            if session_id:
+                try:
+                    self._post_command({"cmd": "sessions.destroy", "session": session_id}, min(timeout, 15))
+                except Exception:
+                    pass
+
+        solution = data.get("solution")
+        if not isinstance(solution, dict):
+            raise RuntimeError("FlareSolverr response has no solution")
+
+        target_host = _host_from_url(target_url)
+        cookies = _filter_flaresolverr_cookies(solution.get("cookies"), target_host)
+        user_agent = str(solution.get("userAgent") or "").strip()
+        if not cookies and not user_agent:
+            raise RuntimeError("FlareSolverr solution has no cookies or User-Agent")
+        return ClearanceBundle(
+            user_agent=user_agent,
+            cookies=cookies,
+            target_host=target_host,
+            proxy_url=bundle_proxy_url,
+        )
+
+    def _post_command(self, payload: dict[str, object], timeout: int) -> dict[str, Any]:
+        parsed_service = urlparse(self.flaresolverr_url)
+        endpoint = (
+            self.flaresolverr_url
+            if parsed_service.path.rstrip("/").endswith("/v1")
+            else f"{self.flaresolverr_url}/v1"
+        )
         request = urllib_request.Request(
             endpoint,
             data=json.dumps(payload).encode("utf-8"),
@@ -171,21 +238,7 @@ class FlareSolverrClearanceProvider:
         if not isinstance(data, dict) or str(data.get("status") or "").lower() != "ok":
             message = str(data.get("message") or data.get("status") or "request failed") if isinstance(data, dict) else "request failed"
             raise RuntimeError(f"FlareSolverr error: {message}")
-        solution = data.get("solution")
-        if not isinstance(solution, dict):
-            raise RuntimeError("FlareSolverr response has no solution")
-
-        target_host = _host_from_url(target_url)
-        cookies = _filter_flaresolverr_cookies(solution.get("cookies"), target_host)
-        user_agent = str(solution.get("userAgent") or "").strip()
-        if not cookies and not user_agent:
-            raise RuntimeError("FlareSolverr solution has no cookies or User-Agent")
-        return ClearanceBundle(
-            user_agent=user_agent,
-            cookies=cookies,
-            target_host=target_host,
-            proxy_url=proxy_url,
-        )
+        return data
 
 
 class ProxySettings:
