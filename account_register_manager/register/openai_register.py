@@ -12,7 +12,7 @@ import uuid
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from typing import Any
-from urllib.parse import parse_qs, urlencode, urlparse
+from urllib.parse import parse_qs, urlencode, urljoin, urlparse
 
 from curl_cffi import requests
 
@@ -493,6 +493,31 @@ def extract_oauth_callback_params_from_url(url: str) -> dict[str, str] | None:
     return {"code": code, "state": str((params.get("state") or [""])[0]).strip(), "scope": str((params.get("scope") or [""])[0]).strip()}
 
 
+def extract_continue_url(data: dict[str, Any] | None) -> str:
+    if not isinstance(data, dict):
+        return ""
+    direct = str(data.get("continue_url") or data.get("continueUrl") or "").strip()
+    if direct:
+        return direct
+    page = data.get("page")
+    if isinstance(page, dict):
+        payload = page.get("payload")
+        if isinstance(payload, dict):
+            nested = str(
+                payload.get("continue_url")
+                or payload.get("continueUrl")
+                or payload.get("next_url")
+                or payload.get("nextUrl")
+                or ""
+            ).strip()
+            if nested:
+                return nested
+    session_info = data.get("oai-client-auth-session")
+    if isinstance(session_info, dict):
+        return str(session_info.get("continue_url") or session_info.get("continueUrl") or "").strip()
+    return ""
+
+
 def _absolute_auth_url(url: str) -> str:
     value = str(url or "").strip()
     if value.startswith("/"):
@@ -759,6 +784,8 @@ class PlatformRegistrar:
         self.device_id = str(uuid.uuid4())
         self.code_verifier = ""
         self.platform_auth_code = ""
+        self.last_otp_continue_url = ""
+        self.passwordless_signup = False
 
     def close(self) -> None:
         self.session.close()
@@ -803,7 +830,7 @@ class PlatformRegistrar:
             step(index, f"Cloudflare clearance 刷新失败：{self.clearance_failure_reason}", "yellow")
         return bundle
 
-    def _platform_authorize(self, email: str, index: int, screen_hint: str = "signup") -> str:
+    def _platform_authorize(self, email: str, index: int, screen_hint: str = "login_or_signup") -> str:
         step(index, "开始 platform authorize")
         self.session.cookies.set("oai-did", self.device_id, domain=".auth.openai.com")
         self.session.cookies.set("oai-did", self.device_id, domain="auth.openai.com")
@@ -814,9 +841,7 @@ class PlatformRegistrar:
             "audience": platform_oauth_audience,
             "redirect_uri": platform_oauth_redirect_uri,
             "device_id": self.device_id,
-            # 注册流程显式声明 signup：throwaway 域名 OpenAI 会自动当新账号走注册，
-            # 但 @outlook.com/@hotmail.com 这类真实消费邮箱会被 login_or_signup 路由到登录分支，
-            # 后续 user/register 落在错误的 auth step 上报 invalid_auth_step。
+            # 官网当前的新账号流程使用 passwordless signup。
             "screen_hint": screen_hint,
             "max_age": "0",
             "login_hint": email,
@@ -848,7 +873,10 @@ class PlatformRegistrar:
             status = getattr(resp, "status_code", "unknown")
             raise RuntimeError(error or f"platform_authorize_http_{status}{detail}, {debug}")
         landed = _authorize_landed_page(resp)
-        step(index, f"platform authorize 完成[{landed or '?'}] url={str(getattr(resp, 'url', '') or '')[:160]}")
+        final_url = str(getattr(resp, "url", "") or "")
+        self.passwordless_signup = "/email-verification" in final_url.lower()
+        mode = "passwordless" if self.passwordless_signup else "password"
+        step(index, f"platform authorize 完成[{landed or '?'}] mode={mode} url={final_url[:160]}")
         return landed
 
     def _reset_auth_cookies(self) -> None:
@@ -975,6 +1003,30 @@ class PlatformRegistrar:
         step(index, "Microsoft passwordless token 换取完成")
         return tokens
 
+    def _start_passwordless_signup(self, index: int) -> None:
+        step(index, "开始切换 passwordless signup 并发送验证码")
+        url = f"{auth_base}/api/accounts/passwordless/send-otp"
+
+        def send():
+            headers = self._json_headers(f"{auth_base}/create-account/password")
+            headers = _headers_with_clearance(headers, url, self.proxy, self.clearance_user_agent)
+            return request_with_local_retry(self.session, "post", url, headers=headers, verify=False)
+
+        resp, error = send()
+        if _is_cloudflare_challenge(resp):
+            bundle = self._refresh_cloudflare_clearance(auth_base, index)
+            if bundle is None:
+                raise RuntimeError(_cloudflare_block_message(resp, reason=self.clearance_failure_reason))
+            resp, error = send()
+            if _is_cloudflare_challenge(resp):
+                raise RuntimeError(_cloudflare_block_message(resp, "Cloudflare clearance 重试仍被拦截"))
+        if resp is None or resp.status_code not in (200, 201, 204):
+            data = _response_json(resp) if resp is not None else {}
+            detail = f", detail={json.dumps(data, ensure_ascii=False)[:300]}" if data else ""
+            raise RuntimeError(error or f"passwordless_send_otp_http_{getattr(resp, 'status_code', 'unknown')}{detail}")
+        self.passwordless_signup = True
+        step(index, "passwordless signup 验证码发送完成")
+
     def _register_user(self, email: str, password: str, index: int) -> None:
         step(index, "开始提交注册密码")
         url = f"{auth_base}/api/accounts/user/register"
@@ -1027,7 +1079,48 @@ class PlatformRegistrar:
             except Exception:
                 pass
             raise RuntimeError(error or f"validate_otp_http_{getattr(resp, 'status_code', 'unknown')}_body={body}")
+        data = _response_json(resp)
+        continue_url = extract_continue_url(data)
+        if continue_url:
+            self.last_otp_continue_url = continue_url
+            self._authorize_continue(continue_url, index)
         step(index, "验证码校验完成")
+
+    def _authorize_continue(self, continue_url: str, index: int) -> None:
+        url = str(continue_url or "").strip()
+        if not url:
+            return
+        if not url.lower().startswith(("http://", "https://")):
+            url = urljoin(f"{auth_base}/", url.lstrip("/"))
+
+        def send():
+            headers = self._navigate_headers(f"{auth_base}/email-verification")
+            headers = _headers_with_clearance(headers, url, self.proxy, self.clearance_user_agent)
+            return request_with_local_retry(
+                self.session,
+                "get",
+                url,
+                headers=headers,
+                allow_redirects=True,
+                verify=False,
+            )
+
+        step(index, "开始继续注册授权")
+        resp, error = send()
+        if _is_cloudflare_challenge(resp):
+            bundle = self._refresh_cloudflare_clearance(auth_base, index)
+            if bundle is None:
+                raise RuntimeError(_cloudflare_block_message(resp, reason=self.clearance_failure_reason))
+            resp, error = send()
+            if _is_cloudflare_challenge(resp):
+                raise RuntimeError(_cloudflare_block_message(resp, "Cloudflare clearance 重试仍被拦截"))
+        if resp is None or resp.status_code not in (200, 302):
+            debug = _response_debug_detail(resp)
+            raise RuntimeError(
+                error
+                or f"authorize_continue_http_{getattr(resp, 'status_code', 'unknown')}, {debug}"
+            )
+        step(index, f"继续注册授权完成 url={str(getattr(resp, 'url', '') or '')[:160]}")
 
     def _create_account(self, name: str, birthdate: str, index: int) -> None:
         step(index, "开始创建账号资料")
@@ -1113,18 +1206,19 @@ class PlatformRegistrar:
         label = str(mailbox.get("label") or "")
         step(index, f"邮箱创建完成[{label}]: {email}")
         try:
-            password = _random_password()
             first_name, last_name = _random_name()
+            # authorize 可能直接发送 OTP，先记录收信边界，避免慢跳转后漏掉验证码。
+            mailbox["_received_after"] = (datetime.now(timezone.utc) - timedelta(seconds=5)).isoformat()
             landed = self._platform_authorize(email, index)
             source_type = "web"
             if landed == "login":
                 tokens = self._passwordless_login(email, mailbox, index)
-                password = ""
                 source_type = "microsoft"
             else:
-                self._register_user(email, password, index)
-                mailbox["_received_after"] = (datetime.now(timezone.utc) - timedelta(seconds=5)).isoformat()
-                self._send_otp(index)
+                if not self.passwordless_signup:
+                    mailbox["_received_after"] = (datetime.now(timezone.utc) - timedelta(seconds=5)).isoformat()
+                    self._start_passwordless_signup(index)
+                step(index, "已进入 passwordless signup，不创建本地不可用的随机密码")
                 step(index, "开始等待注册验证码")
                 code = wait_for_code(mailbox, register_proxy=self.proxy)
                 if not code:
@@ -1139,7 +1233,7 @@ class PlatformRegistrar:
         mail_provider.mark_mailbox_result(mailbox, success=True)
         return {
             "email": email,
-            "password": password,
+            "password": "",
             "access_token": str(tokens.get("access_token") or "").strip(),
             "refresh_token": str(tokens.get("refresh_token") or "").strip(),
             "id_token": str(tokens.get("id_token") or "").strip(),
