@@ -44,6 +44,14 @@ Open `http://127.0.0.1:8010/`. The compose file mounts:
 - `./config.json` to persist settings
 - `./data` to persist account pool and registration settings
 
+To start the optional bundled FlareSolverr service:
+
+```powershell
+docker compose --profile flaresolverr up -d --build
+```
+
+Then enable FlareSolverr in Settings and use `http://flaresolverr:8191` as its URL.
+
 You can also override the login key with an environment variable:
 
 ```powershell

@@ -23,6 +23,7 @@ from account_register_manager.account_service import account_service
 from account_register_manager.auth import require_admin
 from account_register_manager.cliproxy_upload_service import upload_account_to_targets
 from account_register_manager.config import BASE_DIR, config
+from account_register_manager.proxy_service import proxy_settings, test_flaresolverr
 from account_register_manager.register_service import register_service
 from account_register_manager.time_utils import now_beijing, now_beijing_iso
 
@@ -76,6 +77,10 @@ class CheckCodeRequest(BaseModel):
 
 class SettingsUpdateRequest(BaseModel):
     outbound_proxy: str | None = None
+    flaresolverr_enabled: bool | None = None
+    flaresolverr_url: str | None = None
+    flaresolverr_timeout_seconds: int | None = None
+    flaresolverr_refresh_interval_seconds: int | None = None
     image_account_concurrency: int | None = None
     auto_remove_invalid_accounts: bool | None = None
     auto_remove_rate_limited_accounts: bool | None = None
@@ -86,6 +91,13 @@ class SettingsUpdateRequest(BaseModel):
 
 class ProxyTestRequest(BaseModel):
     outbound_proxy: str | None = None
+
+
+class FlareSolverrTestRequest(BaseModel):
+    flaresolverr_url: str | None = None
+    target_url: str = "https://auth.openai.com/"
+    proxy: str | None = None
+    timeout_seconds: int | None = None
 
 
 def _unique_tokens(tokens: list[str]) -> list[str]:
@@ -348,7 +360,9 @@ def create_app() -> FastAPI:
     @app.post("/api/settings")
     async def update_settings(body: SettingsUpdateRequest, authorization: str | None = Header(default=None)):
         require_admin(authorization)
-        return {"settings": config.update(body.model_dump(exclude_none=True))}
+        settings = config.update(body.model_dump(exclude_none=True))
+        proxy_settings.clear_cache()
+        return {"settings": settings}
 
     @app.post("/api/settings/test-proxy")
     async def test_proxy(body: ProxyTestRequest, authorization: str | None = Header(default=None)):
@@ -370,6 +384,24 @@ def create_app() -> FastAPI:
             return {"ok": False, "proxy": proxy, "elapsed_ms": elapsed_ms, "error": str(exc)}
         finally:
             session.close()
+
+    @app.post("/api/settings/test-flaresolverr")
+    async def test_flaresolverr_connection(
+        body: FlareSolverrTestRequest,
+        authorization: str | None = Header(default=None),
+    ):
+        require_admin(authorization)
+        register_config = register_service.get()
+        flaresolverr_url = body.flaresolverr_url if body.flaresolverr_url is not None else config.flaresolverr_url
+        register_proxy = body.proxy if body.proxy is not None else register_config.get("proxy") or ""
+        return test_flaresolverr(
+            flaresolverr_url=str(flaresolverr_url).strip(),
+            target_url=str(body.target_url or "https://auth.openai.com/").strip(),
+            proxy=str(register_proxy).strip(),
+            timeout_seconds=(
+                body.timeout_seconds if body.timeout_seconds is not None else config.flaresolverr_timeout_seconds
+            ),
+        )
 
     @app.post("/api/cliproxy/upload/sync")
     async def sync_cliproxy_upload_targets(body: CliproxySyncRequest, authorization: str | None = Header(default=None)):

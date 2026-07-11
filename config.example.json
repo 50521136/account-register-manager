@@ -1,5 +1,9 @@
 {
   "auth_key": "change-me",
+  "flaresolverr_enabled": false,
+  "flaresolverr_url": "http://flaresolverr:8191",
+  "flaresolverr_timeout_seconds": 60,
+  "flaresolverr_refresh_interval_seconds": 3600,
   "image_account_concurrency": 3,
   "auto_remove_invalid_accounts": false,
   "auto_remove_rate_limited_accounts": false

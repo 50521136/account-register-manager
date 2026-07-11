@@ -297,6 +297,34 @@
 
     <section>
       <div class="toolbar">
+        <h2>FlareSolverr</h2>
+        <div class="actions">
+          <button id="testFlaresolverrButton" class="secondary" onclick="testFlaresolverr()">检测 FlareSolverr</button>
+        </div>
+      </div>
+      <div class="grid two">
+        <label style="display:inline-flex;align-items:center;gap:8px">
+          <input id="settings_flaresolverr_enabled" type="checkbox" style="width:auto">
+          启用 Cloudflare 自动清障
+        </label>
+        <label>FlareSolverr URL
+          <input id="settings_flaresolverr_url" placeholder="http://flaresolverr:8191">
+        </label>
+        <label>请求超时秒数
+          <input id="settings_flaresolverr_timeout_seconds" type="number" min="1" max="300" value="60">
+        </label>
+        <label>Clearance 缓存秒数
+          <input id="settings_flaresolverr_refresh_interval_seconds" type="number" min="60" max="86400" value="3600">
+        </label>
+        <label>检测目标
+          <input id="settings_flaresolverr_test_target" value="https://auth.openai.com/">
+        </label>
+      </div>
+      <div id="flaresolverrTestResult" class="notice" style="display:none;margin-top:12px"></div>
+    </section>
+
+    <section>
+      <div class="toolbar">
         <h2>注册成功自动上传</h2>
         <div class="actions">
           <button class="secondary" onclick="addCliproxyUploadTarget()">添加 CLIProxyAPI</button>
@@ -981,6 +1009,10 @@ function deleteCliproxyUploadTarget(index) {
 function settingsBody() {
   return {
     outbound_proxy: $("settings_outbound_proxy").value.trim(),
+    flaresolverr_enabled: $("settings_flaresolverr_enabled").checked,
+    flaresolverr_url: $("settings_flaresolverr_url").value.trim(),
+    flaresolverr_timeout_seconds: Number($("settings_flaresolverr_timeout_seconds").value || 60),
+    flaresolverr_refresh_interval_seconds: Number($("settings_flaresolverr_refresh_interval_seconds").value || 3600),
     image_account_concurrency: Number($("settings_image_account_concurrency").value || 3),
     refresh_account_interval_minutes: Number($("settings_refresh_account_interval_minutes").value || 0),
     auto_remove_invalid_accounts: $("settings_auto_remove_invalid_accounts").checked,
@@ -1017,6 +1049,10 @@ async function loadSettings() {
   const data = await api("/api/settings");
   settingsCache = data.settings || {};
   $("settings_outbound_proxy").value = settingsCache.outbound_proxy || "";
+  $("settings_flaresolverr_enabled").checked = Boolean(settingsCache.flaresolverr_enabled);
+  $("settings_flaresolverr_url").value = settingsCache.flaresolverr_url || "";
+  $("settings_flaresolverr_timeout_seconds").value = settingsCache.flaresolverr_timeout_seconds || 60;
+  $("settings_flaresolverr_refresh_interval_seconds").value = settingsCache.flaresolverr_refresh_interval_seconds || 3600;
   $("settings_image_account_concurrency").value = settingsCache.image_account_concurrency || 3;
   $("settings_refresh_account_interval_minutes").value = settingsCache.refresh_account_interval_minutes ?? 0;
   $("settings_auto_remove_invalid_accounts").checked = Boolean(settingsCache.auto_remove_invalid_accounts);
@@ -1080,6 +1116,41 @@ async function testProxy() {
   } finally {
     button.disabled = false;
     button.textContent = "检测出口代理";
+  }
+}
+async function testFlaresolverr() {
+  const button = $("testFlaresolverrButton");
+  const resultBox = $("flaresolverrTestResult");
+  const flaresolverrUrl = $("settings_flaresolverr_url").value.trim();
+  if (!flaresolverrUrl) return showError("请先填写 FlareSolverr URL");
+  button.disabled = true;
+  button.textContent = "检测中...";
+  resultBox.style.display = "block";
+  resultBox.className = "notice";
+  resultBox.textContent = "正在请求 FlareSolverr...";
+  try {
+    const data = await api("/api/settings/test-flaresolverr", {
+      method: "POST",
+      body: JSON.stringify({
+        flaresolverr_url: flaresolverrUrl,
+        target_url: $("settings_flaresolverr_test_target").value.trim() || "https://auth.openai.com/",
+        proxy: $("proxy").value.trim(),
+        timeout_seconds: Number($("settings_flaresolverr_timeout_seconds").value || 60)
+      })
+    });
+    if (data.ok) {
+      resultBox.textContent = `FlareSolverr 可用：Cookie ${data.cookie_count || 0} 个，cf_clearance ${data.has_cf_clearance ? "已获取" : "未返回"}，耗时 ${data.elapsed_ms || 0}ms`;
+      resultBox.className = "notice ok";
+    } else {
+      resultBox.textContent = `FlareSolverr 检测失败：${data.error || "未返回 clearance"}，耗时 ${data.elapsed_ms || 0}ms`;
+      resultBox.className = "notice bad";
+    }
+  } catch (error) {
+    resultBox.textContent = `FlareSolverr 检测失败：${error instanceof Error ? error.message : String(error)}`;
+    resultBox.className = "notice bad";
+  } finally {
+    button.disabled = false;
+    button.textContent = "检测 FlareSolverr";
   }
 }
 function renderCpaUrls() {

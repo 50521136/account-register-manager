@@ -121,6 +121,10 @@ docker compose up -d --build
 | --- | --- |
 | `auth_key` | 管理台和 `/api/*` 接口的 Bearer Token |
 | `outbound_proxy` | 后端访问外部服务时使用的出站代理 |
+| `flaresolverr_enabled` | 是否在注册遭遇 Cloudflare 拦截时自动请求 FlareSolverr |
+| `flaresolverr_url` | FlareSolverr 服务地址 |
+| `flaresolverr_timeout_seconds` | FlareSolverr 单次请求超时秒数 |
+| `flaresolverr_refresh_interval_seconds` | Clearance 缓存有效秒数 |
 | `image_account_concurrency` | 图片账号并发相关配置，默认 3 |
 | `auto_remove_invalid_accounts` | 刷新时发现无效 token 是否自动删除 |
 | `auto_remove_rate_limited_accounts` | 更新为限流状态时是否自动删除 |
@@ -289,6 +293,7 @@ Authorization: Bearer <auth_key>
 | `GET` | `/api/settings` | 获取公开设置 |
 | `POST` | `/api/settings` | 更新设置 |
 | `POST` | `/api/settings/test-proxy` | 测试出站代理 |
+| `POST` | `/api/settings/test-flaresolverr` | 测试 FlareSolverr clearance 获取 |
 | `GET` | `/api/accounts` | 获取账号列表 |
 | `POST` | `/api/accounts` | 导入账号或 token |
 | `DELETE` | `/api/accounts` | 删除账号 |

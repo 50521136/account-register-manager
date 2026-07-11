@@ -12,6 +12,26 @@ DATA_DIR = BASE_DIR / "data"
 CONFIG_FILE = BASE_DIR / "config.json"
 
 
+def _bool_value(value: Any, default: bool = False) -> bool:
+    if isinstance(value, bool):
+        return value
+    if value is None:
+        return default
+    normalized = str(value).strip().lower()
+    if normalized in {"1", "true", "yes", "on"}:
+        return True
+    if normalized in {"0", "false", "no", "off"}:
+        return False
+    return default
+
+
+def _bounded_int(value: Any, default: int, minimum: int, maximum: int) -> int:
+    try:
+        return min(maximum, max(minimum, int(value)))
+    except (TypeError, ValueError):
+        return default
+
+
 def _read_json_object(path: Path) -> dict[str, Any]:
     if not path.exists():
         return {}
@@ -51,6 +71,30 @@ class Config:
         return str(self.data.get("outbound_proxy") or "").strip()
 
     @property
+    def flaresolverr_enabled(self) -> bool:
+        environment = os.getenv("ACCOUNT_REGISTER_FLARESOLVERR_ENABLED")
+        return _bool_value(environment, _bool_value(self.data.get("flaresolverr_enabled"), False))
+
+    @property
+    def flaresolverr_url(self) -> str:
+        value = os.getenv("ACCOUNT_REGISTER_FLARESOLVERR_URL") or self.data.get("flaresolverr_url") or ""
+        return str(value).strip().rstrip("/")
+
+    @property
+    def flaresolverr_timeout_seconds(self) -> int:
+        value = os.getenv("ACCOUNT_REGISTER_FLARESOLVERR_TIMEOUT_SECONDS") or self.data.get(
+            "flaresolverr_timeout_seconds"
+        )
+        return _bounded_int(value, 60, 1, 300)
+
+    @property
+    def flaresolverr_refresh_interval_seconds(self) -> int:
+        value = os.getenv("ACCOUNT_REGISTER_FLARESOLVERR_REFRESH_INTERVAL_SECONDS") or self.data.get(
+            "flaresolverr_refresh_interval_seconds"
+        )
+        return _bounded_int(value, 3600, 60, 86400)
+
+    @property
     def cpa_secret_key(self) -> str:
         return str(self.data.get("cpa_secret_key") or self.auth_key or "").strip()
 
@@ -68,6 +112,10 @@ class Config:
     def get_public_settings(self) -> dict[str, Any]:
         return {
             "outbound_proxy": self.outbound_proxy,
+            "flaresolverr_enabled": self.flaresolverr_enabled,
+            "flaresolverr_url": self.flaresolverr_url,
+            "flaresolverr_timeout_seconds": self.flaresolverr_timeout_seconds,
+            "flaresolverr_refresh_interval_seconds": self.flaresolverr_refresh_interval_seconds,
             "image_account_concurrency": self.image_account_concurrency,
             "auto_remove_invalid_accounts": self.auto_remove_invalid_accounts,
             "auto_remove_rate_limited_accounts": self.auto_remove_rate_limited_accounts,
@@ -80,6 +128,10 @@ class Config:
         next_data = dict(self.data)
         for key in (
             "outbound_proxy",
+            "flaresolverr_enabled",
+            "flaresolverr_url",
+            "flaresolverr_timeout_seconds",
+            "flaresolverr_refresh_interval_seconds",
             "image_account_concurrency",
             "auto_remove_invalid_accounts",
             "auto_remove_rate_limited_accounts",
