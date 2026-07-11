@@ -250,6 +250,7 @@ FastAPI 主应用，负责：
 - `ddg_mail`
 - `tempmail_lol`
 - `duckmail`
+- `freemail`（兼容 `idinging/freemail` API）
 - `gptmail`
 - `moemail`
 - `inbucket`

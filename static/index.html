@@ -209,6 +209,7 @@
                   <option value="moemail">moemail</option>
                   <option value="inbucket">inbucket</option>
                   <option value="duckmail">duckmail</option>
+                  <option value="freemail">freemail</option>
                   <option value="gptmail">gptmail</option>
                   <option value="yyds_mail">yyds_mail</option>
                   <option value="ddg_mail">ddg_mail</option>
@@ -308,7 +309,7 @@
           启用 Cloudflare 自动清障
         </label>
         <label>FlareSolverr URL
-          <input id="settings_flaresolverr_url" placeholder="http://flaresolverr:8191">
+          <input id="settings_flaresolverr_url" placeholder="https://flaresolverr.example.com">
         </label>
         <label>请求超时秒数
           <input id="settings_flaresolverr_timeout_seconds" type="number" min="1" max="300" value="60">
@@ -386,6 +387,7 @@ const providerDefaults = {
   moemail: { type: "moemail", enable: true, api_base: "", api_key: "", domain: [], expiry_time: 0 },
   inbucket: { type: "inbucket", enable: true, api_base: "", domain: [], random_subdomain: true },
   duckmail: { type: "duckmail", enable: true, api_key: "", default_domain: "duckmail.sbs" },
+  freemail: { type: "freemail", enable: true, api_base: "", admin_token: "", domain: [], domain_index: 0, random_length: 10, message_limit: 20 },
   gptmail: { type: "gptmail", enable: true, api_key: "", default_domain: "" },
   yyds_mail: { type: "yyds_mail", enable: true, api_base: "https://maliapi.215.im/v1", api_key: "", domain: [], subdomain: "", wildcard: false },
   ddg_mail: { type: "ddg_mail", enable: true, ddg_token: "", cf_api_base: "", cf_inbox_jwt: "", admin_password: "", cf_domain: [] },
@@ -398,6 +400,7 @@ const providerNotes = {
   moemail: "需要 API Base、API Key 和 Domain。",
   inbucket: "适合本地/自建 Inbucket；需要 API Base 和基础域名，可开启随机子域名。",
   duckmail: "需要 API Key；Default Domain 默认 duckmail.sbs。",
+  freemail: "适配 idinging/freemail；需要 API Base 和根管理员 JWT Token。Domain 可留空并使用 Domain Index。",
   gptmail: "需要 API Key；Default Domain 可选。",
   yyds_mail: "需要 API Base 和 API Key；可配置 Domain、Subdomain、Wildcard。",
   ddg_mail: "DDG 邮箱别名 + CF 收件箱转发模式；需要 DDG Token 和 CF Inbox JWT。",
@@ -867,11 +870,12 @@ function providerHtml(provider, index) {
   const type = provider.type || "tempmail_lol";
   const types = Object.keys(providerDefaults).map((name) => `<option value="${name}" ${name === type ? "selected" : ""}>${name}</option>`).join("");
   let fields = "";
-  if (["cloudmail_gen", "cloudflare_temp_email", "moemail", "inbucket", "yyds_mail"].includes(type)) fields += providerField("api_base", type === "cloudmail_gen" ? "CloudMail URL" : "API Base", provider.api_base);
+  if (["cloudmail_gen", "cloudflare_temp_email", "moemail", "inbucket", "yyds_mail", "freemail"].includes(type)) fields += providerField("api_base", type === "cloudmail_gen" ? "CloudMail URL" : "API Base", provider.api_base);
   if (type === "cloudmail_gen") fields += providerField("admin_email", "管理员邮箱", provider.admin_email) + providerField("admin_password", "管理员密码", provider.admin_password) + providerField("email_prefix", "邮箱前缀", provider.email_prefix);
   if (["cloudflare_temp_email"].includes(type)) fields += providerField("admin_password", "Admin Password", provider.admin_password);
   if (["tempmail_lol", "moemail", "duckmail", "gptmail", "yyds_mail"].includes(type)) fields += providerField("api_key", "API Key", provider.api_key);
   if (["duckmail", "gptmail"].includes(type)) fields += providerField("default_domain", "Default Domain", provider.default_domain);
+  if (type === "freemail") fields += providerField("admin_token", "Admin Token", provider.admin_token, "password") + providerListField("domain", "Domain 列表", provider.domain) + providerField("domain_index", "Domain Index", provider.domain_index ?? 0, "number") + providerField("random_length", "随机前缀长度", provider.random_length ?? 10, "number") + providerField("message_limit", "邮件查询数量", provider.message_limit ?? 20, "number");
   if (["cloudmail_gen", "cloudflare_temp_email", "tempmail_lol", "moemail", "inbucket", "yyds_mail"].includes(type)) fields += providerListField("domain", type === "inbucket" ? "基础域名列表" : "Domain 列表", provider.domain);
   if (type === "cloudmail_gen") fields += providerListField("subdomain", "Subdomain 列表", provider.subdomain);
   if (type === "inbucket") fields += providerCheck("random_subdomain", "启用随机子域名", provider.random_subdomain ?? true);

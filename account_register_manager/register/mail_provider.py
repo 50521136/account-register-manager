@@ -2152,6 +2152,10 @@ def _create_provider(mail_config: dict, provider: str = "", provider_ref: str = 
         return CloudflareTempMailProvider(entry, conf)
     if entry["type"] == "ddg_mail":
         return DDGMailProvider(entry, conf)
+    if entry["type"] == "freemail":
+        from account_register_manager.register.freemail_provider import FreeMailProvider
+
+        return FreeMailProvider(entry, conf)
     if entry["type"] == "tempmail_lol":
         return TempMailLolProvider(entry, conf)
     if entry["type"] == "duckmail":

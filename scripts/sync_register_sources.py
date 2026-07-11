@@ -118,6 +118,17 @@ def patch_mail_provider(path: Path) -> None:
         "from services.proxy_service import proxy_settings",
         "from account_register_manager.proxy_service import proxy_settings",
     )
+    if 'if entry["type"] == "freemail":' not in text:
+        text = text.replace(
+            '    if entry["type"] == "tempmail_lol":\n'
+            '        return TempMailLolProvider(entry, conf)',
+            '    if entry["type"] == "freemail":\n'
+            '        from account_register_manager.register.freemail_provider import FreeMailProvider\n'
+            '\n'
+            '        return FreeMailProvider(entry, conf)\n'
+            '    if entry["type"] == "tempmail_lol":\n'
+            '        return TempMailLolProvider(entry, conf)',
+        )
     text = text.replace(
         '    for item in mail_config["providers"]:\n'
         '        idx = len(result) + 1\n'

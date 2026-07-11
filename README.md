@@ -44,13 +44,7 @@ Open `http://127.0.0.1:8010/`. The compose file mounts:
 - `./config.json` to persist settings
 - `./data` to persist account pool and registration settings
 
-To start the optional bundled FlareSolverr service:
-
-```powershell
-docker compose --profile flaresolverr up -d --build
-```
-
-Then enable FlareSolverr in Settings and use `http://flaresolverr:8191` as its URL.
+FlareSolverr is not bundled. Deploy it separately, then enable it in Settings and enter its external URL.
 
 You can also override the login key with an environment variable:
 
@@ -71,6 +65,10 @@ docker compose down
 
 The registration settings are still stored in `data/register.json`. You must configure
 at least one enabled mail provider before starting registration.
+
+The `freemail` provider supports the API documented by
+`idinging/freemail/docs/api.md`. Configure its API Base and root admin JWT token;
+optionally set a domain list or a numeric Domain Index.
 
 If you configure upstream CLIProxyAPI upload targets in Settings, every newly
 registered account is uploaded to each enabled target with:

@@ -15,14 +15,3 @@ services:
     volumes:
       - ./config.json:/app/config.json
       - ./data:/app/data
-
-  flaresolverr:
-    profiles: ["flaresolverr"]
-    image: ghcr.io/flaresolverr/flaresolverr:latest
-    container_name: account-register-manager-flaresolverr
-    restart: unless-stopped
-    environment:
-      LOG_LEVEL: "${FLARESOLVERR_LOG_LEVEL:-info}"
-      TZ: "${TZ:-Asia/Shanghai}"
-    ports:
-      - "127.0.0.1:${FLARESOLVERR_PORT:-8191}:8191"
