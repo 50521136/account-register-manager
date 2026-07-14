@@ -1210,10 +1210,8 @@ class PlatformRegistrar:
             # authorize 可能直接发送 OTP，先记录收信边界，避免慢跳转后漏掉验证码。
             mailbox["_received_after"] = (datetime.now(timezone.utc) - timedelta(seconds=5)).isoformat()
             landed = self._platform_authorize(email, index)
-            source_type = "web"
             if landed == "login":
                 tokens = self._passwordless_login(email, mailbox, index)
-                source_type = "microsoft"
             else:
                 if not self.passwordless_signup:
                     mailbox["_received_after"] = (datetime.now(timezone.utc) - timedelta(seconds=5)).isoformat()
@@ -1237,7 +1235,7 @@ class PlatformRegistrar:
             "access_token": str(tokens.get("access_token") or "").strip(),
             "refresh_token": str(tokens.get("refresh_token") or "").strip(),
             "id_token": str(tokens.get("id_token") or "").strip(),
-            "source_type": source_type,
+            "source_type": "web",
             "created_at": now_beijing_iso(),
         }
 
