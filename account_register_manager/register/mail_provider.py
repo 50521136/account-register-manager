@@ -1066,7 +1066,7 @@ class TempMailLolProvider(BaseMailProvider):
 
     def __init__(self, entry: dict, conf: dict):
         super().__init__(conf, str(entry.get("provider_ref") or ""))
-        self.api_key = _primary_secret(entry.get("api_key"))
+        self.api_key = str(entry.get("api_key") or "").strip()
         self.domain = [str(item).strip() for item in (entry.get("domain") or []) if str(item).strip()]
         self.session = _create_session(conf)
         self.session.headers.update({"User-Agent": conf["user_agent"], "Accept": "application/json", "Content-Type": "application/json"})
@@ -1124,7 +1124,7 @@ class DuckMailProvider(BaseMailProvider):
 
     def __init__(self, entry: dict, conf: dict):
         super().__init__(conf, str(entry.get("provider_ref") or ""))
-        self.api_key = _primary_secret(entry.get("api_key"))
+        self.api_key = str(entry["api_key"]).strip()
         self.default_domain = str(entry.get("default_domain") or "duckmail.sbs").strip() or "duckmail.sbs"
         self.session = _create_session(conf)
         self.session.headers.update({"User-Agent": conf["user_agent"], "Accept": "application/json", "Content-Type": "application/json"})
@@ -1225,7 +1225,7 @@ class DoneMailProvider(BaseMailProvider):
                 api_base = api_base[: -len(suffix)].rstrip("/")
                 break
         self.api_base = api_base
-        self.admin_key = _primary_secret(entry.get("admin_key") or entry.get("admin_password") or entry.get("api_key"))
+        self.admin_key = str(entry.get("admin_key") or entry.get("admin_password") or entry.get("api_key") or "").strip()
         self.domain = _normalize_string_list(entry.get("domain") or entry.get("default_domain"))
         self.email_prefix = str(entry.get("email_prefix") or "").strip()
         self.message_limit = max(1, min(50, int(entry.get("message_limit") or 20)))
@@ -1326,7 +1326,7 @@ class MoEmailProvider(BaseMailProvider):
     def __init__(self, entry: dict, conf: dict):
         super().__init__(conf, str(entry.get("provider_ref") or ""))
         self.api_base = str(entry["api_base"]).rstrip("/")
-        self.api_key = _primary_secret(entry.get("api_key"))
+        self.api_key = str(entry["api_key"]).strip()
         raw_domains = entry.get("domain") or []
         if isinstance(raw_domains, list):
             self.domain = [str(item).strip() for item in raw_domains if str(item).strip()]
@@ -1483,7 +1483,7 @@ class YydsMailProvider(BaseMailProvider):
     def __init__(self, entry: dict, conf: dict):
         super().__init__(conf, str(entry.get("provider_ref") or ""))
         self.api_base = str(entry.get("api_base") or "https://maliapi.215.im/v1").rstrip("/")
-        self.api_key = _primary_secret(entry.get("api_key"))
+        self.api_key = str(entry["api_key"]).strip()
         self.domain = [str(item).strip() for item in (entry.get("domain") or []) if str(item).strip()]
         self.subdomain = str(entry.get("subdomain") or "").strip()
         self.wildcard = bool(entry.get("wildcard"))
