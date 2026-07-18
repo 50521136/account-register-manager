@@ -70,6 +70,11 @@ def _normalize(raw: dict) -> dict:
     cfg["target_available"] = max(1, int(cfg.get("target_available") or 1))
     cfg["check_interval"] = max(1, int(cfg.get("check_interval") or 5))
     cfg["proxy"] = str(cfg.get("proxy") or "").strip()
+    source = str(cfg.get("proxy_source") or "custom").strip().lower()
+    cfg["proxy_source"] = source if source in {"custom", "pool"} else "custom"
+    pool_mode = str(cfg.get("proxy_pool_mode") or "random").strip().lower()
+    cfg["proxy_pool_mode"] = pool_mode if pool_mode in {"selected", "random", "round_robin"} else "random"
+    cfg["proxy_id"] = str(cfg.get("proxy_id") or "").strip()
     cfg["mail"] = _normalize_mail_config(cfg.get("mail"))
     cfg["enabled"] = bool(cfg.get("enabled"))
     cfg["stats"] = {**_default_config()["stats"], **(raw.get("stats") if isinstance(raw.get("stats"), dict) else {}), "threads": cfg["threads"]}
@@ -109,11 +114,31 @@ class RegisterService:
     def update(self, updates: dict) -> dict:
         with self._lock:
             self._config = _normalize({**self._config, **updates})
-            if self._config.get("proxy") and isinstance(self._config.get("mail"), dict):
-                self._config["mail"]["proxy"] = self._config["proxy"]
-            openai_register.config.update({k: self._config[k] for k in ("mail", "proxy", "total", "threads")})
+            try:
+                effective_proxy = self.resolve_proxy()
+            except Exception:
+                effective_proxy = str(self._config.get("proxy") or "").strip()
+            if effective_proxy and isinstance(self._config.get("mail"), dict):
+                self._config["mail"]["proxy"] = effective_proxy
+            openai_register.config.update({k: self._config[k] for k in ("mail", "proxy", "proxy_source", "proxy_pool_mode", "proxy_id", "total", "threads")})
             self._save()
             return self.get()
+
+
+    def resolve_proxy(self) -> str:
+        from account_register_manager.proxy_pool_service import proxy_pool_service
+
+        cfg = self._config
+        source = str(cfg.get("proxy_source") or "custom").strip().lower()
+        if source != "pool":
+            return str(cfg.get("proxy") or "").strip()
+        return proxy_pool_service.resolve(
+            source="pool",
+            custom_proxy=str(cfg.get("proxy") or "").strip(),
+            mode=str(cfg.get("proxy_pool_mode") or "random"),
+            proxy_id=str(cfg.get("proxy_id") or "").strip(),
+            allow_empty=False,
+        )
 
     def start(self) -> dict:
         with self._lock:
@@ -139,7 +164,7 @@ class RegisterService:
                 "started_at": _now(),
                 "updated_at": _now(),
             }
-            openai_register.config.update({k: self._config[k] for k in ("mail", "proxy", "total", "threads")})
+            openai_register.config.update({k: self._config[k] for k in ("mail", "proxy", "proxy_source", "proxy_pool_mode", "proxy_id", "total", "threads")})
             with openai_register.stats_lock:
                 openai_register.stats.update({"done": 0, "success": 0, "fail": 0, "start_time": time.time()})
             self._save()

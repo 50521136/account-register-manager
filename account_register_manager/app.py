@@ -23,7 +23,8 @@ from account_register_manager.account_service import account_service
 from account_register_manager.auth import require_admin
 from account_register_manager.cliproxy_upload_service import upload_account_to_targets
 from account_register_manager.config import BASE_DIR, config
-from account_register_manager.proxy_service import proxy_settings, test_flaresolverr
+from account_register_manager.proxy_pool_service import parse_proxy_line, proxy_pool_service
+from account_register_manager.proxy_service import normalize_proxy_url, proxy_settings, test_flaresolverr
 from account_register_manager.register_service import register_service
 from account_register_manager.time_utils import now_beijing, now_beijing_iso
 
@@ -61,6 +62,9 @@ class AccountUpdateRequest(BaseModel):
 class RegisterConfigRequest(BaseModel):
     mail: dict | None = None
     proxy: str | None = None
+    proxy_source: str | None = None
+    proxy_pool_mode: str | None = None
+    proxy_id: str | None = None
     total: int | None = None
     threads: int | None = None
     mode: str | None = None
@@ -77,6 +81,9 @@ class CheckCodeRequest(BaseModel):
 
 class SettingsUpdateRequest(BaseModel):
     outbound_proxy: str | None = None
+    outbound_proxy_source: str | None = None
+    outbound_proxy_id: str | None = None
+    outbound_proxy_pool_mode: str | None = None
     flaresolverr_enabled: bool | None = None
     flaresolverr_url: str | None = None
     flaresolverr_timeout_seconds: int | None = None
@@ -91,6 +98,24 @@ class SettingsUpdateRequest(BaseModel):
 
 class ProxyTestRequest(BaseModel):
     outbound_proxy: str | None = None
+    proxy_id: str | None = None
+
+
+class ProxyPoolBatchRequest(BaseModel):
+    text: str = ""
+    proxies: list[str] = Field(default_factory=list)
+    replace: bool = False
+
+
+class ProxyPoolDeleteRequest(BaseModel):
+    ids: list[str] = Field(default_factory=list)
+
+
+class ProxyPoolUpdateRequest(BaseModel):
+    id: str = ""
+    enabled: bool | None = None
+    note: str | None = None
+    url: str | None = None
 
 
 class FlareSolverrTestRequest(BaseModel):
@@ -367,7 +392,21 @@ def create_app() -> FastAPI:
     @app.post("/api/settings/test-proxy")
     async def test_proxy(body: ProxyTestRequest, authorization: str | None = Header(default=None)):
         require_admin(authorization)
-        proxy = str(body.outbound_proxy if body.outbound_proxy is not None else config.outbound_proxy).strip()
+        proxy = str(body.outbound_proxy if body.outbound_proxy is not None else "").strip()
+        proxy_id = str(body.proxy_id or "").strip()
+        if proxy_id and not proxy:
+            item = proxy_pool_service.get(proxy_id)
+            proxy = str((item or {}).get("url") or "").strip()
+        if not proxy:
+            # fallback: resolve configured outbound proxy
+            proxy = str(config.resolve_outbound_proxy() or "").strip()
+            if not proxy:
+                proxy = str(config.data.get("outbound_proxy") or "").strip()
+        if proxy:
+            try:
+                proxy = normalize_proxy_url(parse_proxy_line(proxy))
+            except Exception:
+                proxy = normalize_proxy_url(proxy)
         started = now_beijing()
         session = curl_requests.Session(impersonate="edge101")
         if proxy:
@@ -376,14 +415,18 @@ def create_app() -> FastAPI:
             response = session.get("https://api.ipify.org?format=json", timeout=12)
             elapsed_ms = round((now_beijing() - started).total_seconds() * 1000)
             if response.status_code != 200:
-                return {"ok": False, "status_code": response.status_code, "elapsed_ms": elapsed_ms, "error": response.text[:300]}
+                if proxy_id or proxy:
+                    proxy_pool_service.mark_result(proxy_id=proxy_id, proxy_url=proxy, ok=False, error=f"HTTP {response.status_code}")
+                return {"ok": False, "status_code": response.status_code, "elapsed_ms": elapsed_ms, "error": response.text[:200]}
             payload = response.json()
+            if proxy_id or proxy:
+                proxy_pool_service.mark_result(proxy_id=proxy_id, proxy_url=proxy, ok=True)
             return {"ok": True, "proxy": proxy, "ip": payload.get("ip"), "elapsed_ms": elapsed_ms}
         except Exception as exc:
             elapsed_ms = round((now_beijing() - started).total_seconds() * 1000)
+            if proxy_id or proxy:
+                proxy_pool_service.mark_result(proxy_id=proxy_id, proxy_url=proxy, ok=False, error=str(exc))
             return {"ok": False, "proxy": proxy, "elapsed_ms": elapsed_ms, "error": str(exc)}
-        finally:
-            session.close()
 
     @app.post("/api/settings/test-flaresolverr")
     async def test_flaresolverr_connection(
@@ -402,6 +445,79 @@ def create_app() -> FastAPI:
                 body.timeout_seconds if body.timeout_seconds is not None else config.flaresolverr_timeout_seconds
             ),
         )
+
+    @app.get("/api/proxy-pool")
+    async def get_proxy_pool(authorization: str | None = Header(default=None)):
+        require_admin(authorization)
+        proxies = proxy_pool_service.list()
+        return {
+            "proxies": proxies,
+            "total": len(proxies),
+            "enabled": sum(1 for item in proxies if item.get("enabled")),
+        }
+
+    @app.post("/api/proxy-pool")
+    async def add_proxy_pool(body: ProxyPoolBatchRequest, authorization: str | None = Header(default=None)):
+        require_admin(authorization)
+        result = proxy_pool_service.add_batch(text=body.text, proxies=body.proxies, replace=bool(body.replace))
+        return result
+
+    @app.delete("/api/proxy-pool")
+    async def delete_proxy_pool(body: ProxyPoolDeleteRequest, authorization: str | None = Header(default=None)):
+        require_admin(authorization)
+        return proxy_pool_service.delete(body.ids)
+
+    @app.post("/api/proxy-pool/clear")
+    async def clear_proxy_pool(authorization: str | None = Header(default=None)):
+        require_admin(authorization)
+        return proxy_pool_service.clear()
+
+    @app.post("/api/proxy-pool/update")
+    async def update_proxy_pool_item(body: ProxyPoolUpdateRequest, authorization: str | None = Header(default=None)):
+        require_admin(authorization)
+        proxy_id = str(body.id or "").strip()
+        if not proxy_id:
+            raise HTTPException(status_code=400, detail={"error": "id is required"})
+        item = proxy_pool_service.update_item(
+            proxy_id,
+            note=body.note,
+            enabled=body.enabled,
+            url=body.url,
+        )
+        if not item:
+            raise HTTPException(status_code=404, detail={"error": "proxy not found"})
+        return {"proxy": item}
+
+    @app.post("/api/proxy-pool/test")
+    async def test_proxy_pool_item(body: ProxyTestRequest, authorization: str | None = Header(default=None)):
+        require_admin(authorization)
+        proxy = str(body.outbound_proxy or "").strip()
+        proxy_id = str(body.proxy_id or "").strip()
+        if proxy_id and not proxy:
+            item = proxy_pool_service.get(proxy_id)
+            proxy = str((item or {}).get("url") or "").strip()
+        if not proxy:
+            raise HTTPException(status_code=400, detail={"error": "proxy is required"})
+        try:
+            proxy = normalize_proxy_url(parse_proxy_line(proxy))
+        except Exception as exc:
+            raise HTTPException(status_code=400, detail={"error": str(exc)}) from exc
+        started = now_beijing()
+        session = curl_requests.Session(impersonate="edge101")
+        session.proxies = {"http": proxy, "https": proxy}
+        try:
+            response = session.get("https://api.ipify.org?format=json", timeout=12)
+            elapsed_ms = round((now_beijing() - started).total_seconds() * 1000)
+            if response.status_code != 200:
+                proxy_pool_service.mark_result(proxy_id=proxy_id, proxy_url=proxy, ok=False, error=f"HTTP {response.status_code}")
+                return {"ok": False, "status_code": response.status_code, "elapsed_ms": elapsed_ms, "error": response.text[:200], "proxy": proxy}
+            payload = response.json()
+            proxy_pool_service.mark_result(proxy_id=proxy_id, proxy_url=proxy, ok=True)
+            return {"ok": True, "proxy": proxy, "ip": payload.get("ip"), "elapsed_ms": elapsed_ms}
+        except Exception as exc:
+            elapsed_ms = round((now_beijing() - started).total_seconds() * 1000)
+            proxy_pool_service.mark_result(proxy_id=proxy_id, proxy_url=proxy, ok=False, error=str(exc))
+            return {"ok": False, "proxy": proxy, "elapsed_ms": elapsed_ms, "error": str(exc)}
 
     @app.post("/api/cliproxy/upload/sync")
     async def sync_cliproxy_upload_targets(body: CliproxySyncRequest, authorization: str | None = Header(default=None)):

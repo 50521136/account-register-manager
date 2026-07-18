@@ -77,6 +77,14 @@
     .modal-box textarea { width: 100%; min-height: 120px; font-family: ui-monospace, SFMono-Regular, Consolas, monospace; font-size: 12px; border: 1px solid #cfd6df; border-radius: 6px; padding: 9px 10px; resize: vertical; }
     .modal-error { color: #b91c1c; font-size: 13px; margin-top: 8px; }
     .modal-msg { font-size: 14px; color: #374151; line-height: 1.5; margin-bottom: 16px; }
+
+    .proxy-pool-list { display: grid; gap: 8px; margin-top: 12px; max-height: 320px; overflow: auto; }
+    .proxy-pool-item { display: grid; grid-template-columns: auto 1fr auto; gap: 10px; align-items: center; border: 1px solid #e5e7eb; border-radius: 8px; padding: 10px 12px; background: #fbfcfd; }
+    .proxy-pool-item code { word-break: break-all; }
+    .proxy-pool-item .meta { color: #6b7280; font-size: 12px; margin-top: 4px; }
+    .proxy-source-box { display: grid; gap: 8px; }
+    .proxy-source-box .source-row { display: grid; grid-template-columns: 120px 1fr; gap: 8px; align-items: center; }
+    @media (max-width: 900px) { .proxy-source-box .source-row { grid-template-columns: 1fr; } .proxy-pool-item { grid-template-columns: 1fr; } }
   </style>
 </head>
 <body>
@@ -190,7 +198,23 @@
           </label>
           <label>注册总数<input id="total" type="number" min="1" value="1"></label>
           <label>线程数<input id="threads" type="number" min="1" value="1"></label>
-          <label>注册代理<input id="proxy" placeholder="http://127.0.0.1:7890"></label>
+          <label class="proxy-source-box" style="grid-column: span 2">注册代理
+            <div class="source-row">
+              <select id="proxy_source" onchange="onRegisterProxySourceChange()">
+                <option value="custom">自定义</option>
+                <option value="pool">IP代理池</option>
+              </select>
+              <input id="proxy" placeholder="http://user:pass@host:port 或 socks5://user:pass@host:port">
+            </div>
+            <div id="registerProxyPoolControls" class="source-row" style="display:none">
+              <select id="proxy_pool_mode" onchange="onRegisterProxyModeChange()">
+                <option value="random">随机</option>
+                <option value="round_robin">轮询</option>
+                <option value="selected">指定一条</option>
+              </select>
+              <select id="proxy_id"></select>
+            </div>
+          </label>
           <label>目标剩余额度<input id="target_quota" type="number" min="1" value="100"></label>
           <label>目标可用账号<input id="target_available" type="number" min="1" value="10"></label>
           <label>检查间隔秒<input id="check_interval" type="number" min="1" value="5"></label>
@@ -271,8 +295,22 @@
       </div>
 
       <div class="grid two">
-        <label>出口代理
-          <input id="settings_outbound_proxy" placeholder="http://127.0.0.1:7890 或 socks5://127.0.0.1:1080">
+        <label class="proxy-source-box">出口代理
+          <div class="source-row">
+            <select id="settings_outbound_proxy_source" onchange="onOutboundProxySourceChange()">
+              <option value="custom">自定义</option>
+              <option value="pool">IP代理池</option>
+            </select>
+            <input id="settings_outbound_proxy" placeholder="http://127.0.0.1:7890 或 socks5://127.0.0.1:1080">
+          </div>
+          <div id="outboundProxyPoolControls" class="source-row" style="display:none;margin-top:8px">
+            <select id="settings_outbound_proxy_pool_mode" onchange="onOutboundProxyModeChange()">
+              <option value="selected">指定一条</option>
+              <option value="random">随机</option>
+              <option value="round_robin">轮询</option>
+            </select>
+            <select id="settings_outbound_proxy_id"></select>
+          </div>
         </label>
         <label>账号刷新并发
           <input id="settings_image_account_concurrency" type="number" min="1" value="3">
@@ -294,6 +332,32 @@
         出口代理会用于账号检测/刷新请求。账号定时刷新间隔填 0 表示关闭自动检测；注册机仍使用注册页里的“注册代理”，这样注册和检测可以分开配置。
       </div>
       <div id="proxyTestResult" class="notice" style="display:none;margin-top:12px"></div>
+    </section>
+
+    <section>
+      <div class="toolbar">
+        <h2>IP 代理池</h2>
+        <div class="actions">
+          <button class="secondary" onclick="addProxyPoolBatch()">批量添加</button>
+          <button class="secondary" onclick="loadProxyPool()">刷新</button>
+          <button class="danger" onclick="clearProxyPool()">清空</button>
+        </div>
+      </div>
+      <label>批量导入（一行一个，支持 http/https/socks5，可带账号密码）
+        <textarea id="proxyPoolBatchText" placeholder="http://user:pass@geo-sg.ipcook.com:32345&#10;socks5://root:root@86.53.110.17:14626&#10;# 注释行会被忽略"></textarea>
+      </label>
+      <div class="actions" style="margin-top:10px">
+        <label style="display:inline-flex;align-items:center;gap:8px;width:auto">
+          <input id="proxyPoolReplace" type="checkbox" style="width:auto">
+          导入时替换现有列表
+        </label>
+        <span id="proxyPoolSummary" style="color:#6b7280;font-size:13px;align-self:center"></span>
+      </div>
+      <div id="proxyPoolList" class="proxy-pool-list"></div>
+      <div id="proxyPoolResult" class="notice" style="display:none;margin-top:12px"></div>
+      <div class="notice" style="margin-top:12px">
+        代理池可在“注册代理”和“出口代理”中选择使用。多线程注册建议使用随机/轮询，避免所有任务挤在同一 IP。
+      </div>
     </section>
 
     <section>
@@ -374,6 +438,7 @@ const $ = (id) => document.getElementById(id);
 let accountsCache = [];
 let registerCache = null;
 let settingsCache = null;
+let proxyPoolCache = [];
 let registerDirty = false;
 let registerHydrated = false;
 let accountRefreshJob = null;
@@ -431,7 +496,9 @@ function showTab(name) {
   $("panelRegister").classList.toggle("active", name === "register");
   $("panelSettings").classList.toggle("active", name === "settings");
   if (name === "accounts") loadAccounts().catch(showError);
-  if (name === "register") loadRegister().catch(showError);
+  if (name === "register") {
+    loadProxyPool().catch(() => {}).finally(() => loadRegister().catch(showError));
+  }
   if (name === "settings") loadSettings().catch(showError);
 }
 let _modalResolve = null;
@@ -534,9 +601,10 @@ function logout() {
   $("appShell").style.display = "none";
   $("loginScreen").style.display = "grid";
 }
-function showApp() {
+async function showApp() {
   $("loginScreen").style.display = "none";
   $("appShell").style.display = "block";
+  try { await loadProxyPool(); } catch (error) { /* ignore */ }
   loadAccounts().catch(showError);
   loadRegister().catch(showError);
   loadSettings().catch(showError);
@@ -813,6 +881,10 @@ async function loadRegister() {
 }
 function hydrateRegisterForm(cfg) {
   for (const key of ["mode", "total", "threads", "proxy", "target_quota", "target_available", "check_interval"]) $(key).value = cfg[key] ?? "";
+  $("proxy_source").value = cfg.proxy_source || "custom";
+  $("proxy_pool_mode").value = cfg.proxy_pool_mode || "random";
+  fillProxySelect($("proxy_id"), cfg.proxy_id || "", true);
+  onRegisterProxySourceChange();
   const mail = cfg.mail || { request_timeout: 30, wait_timeout: 30, wait_interval: 2, providers: [] };
   $("mail_request_timeout").value = mail.request_timeout ?? 30;
   $("mail_wait_timeout").value = mail.wait_timeout ?? 30;
@@ -1015,9 +1087,199 @@ function deleteCliproxyUploadTarget(index) {
   targets.splice(index, 1);
   renderCliproxyUploadTargets(targets);
 }
+
+function fillProxySelect(selectEl, selectedId = "", includeEmpty = false) {
+  if (!selectEl) return;
+  const current = selectedId || selectEl.value || "";
+  const items = (proxyPoolCache || []).filter((item) => item.enabled !== false);
+  const options = [];
+  if (includeEmpty) options.push(`<option value="">${items.length ? "请选择代理" : "代理池为空"}</option>`);
+  for (const item of items) {
+    const label = item.display || item.url || item.id;
+    options.push(`<option value="${escapeAttr(item.id)}">${escapeAttr(label)}</option>`);
+  }
+  selectEl.innerHTML = options.join("") || `<option value="">代理池为空</option>`;
+  if (current && [...selectEl.options].some((opt) => opt.value === current)) {
+    selectEl.value = current;
+  }
+}
+
+function refreshProxySelects() {
+  const registerSelected = $("proxy_id") ? $("proxy_id").value : "";
+  const outboundSelected = $("settings_outbound_proxy_id") ? $("settings_outbound_proxy_id").value : (settingsCache && settingsCache.outbound_proxy_id) || "";
+  if ($("proxy_id")) fillProxySelect($("proxy_id"), registerSelected, true);
+  if ($("settings_outbound_proxy_id")) fillProxySelect($("settings_outbound_proxy_id"), outboundSelected, true);
+  onRegisterProxySourceChange();
+  onOutboundProxySourceChange();
+}
+
+function onRegisterProxySourceChange() {
+  const source = $("proxy_source").value;
+  const pool = source === "pool";
+  $("registerProxyPoolControls").style.display = pool ? "grid" : "none";
+  $("proxy").style.display = pool ? "none" : "block";
+  onRegisterProxyModeChange();
+}
+
+function onRegisterProxyModeChange() {
+  if ($("proxy_source").value !== "pool") return;
+  const selected = $("proxy_pool_mode").value === "selected";
+  $("proxy_id").style.display = selected ? "block" : "none";
+}
+
+function onOutboundProxySourceChange() {
+  const source = $("settings_outbound_proxy_source").value;
+  const pool = source === "pool";
+  $("outboundProxyPoolControls").style.display = pool ? "grid" : "none";
+  $("settings_outbound_proxy").style.display = pool ? "none" : "block";
+  onOutboundProxyModeChange();
+}
+
+function onOutboundProxyModeChange() {
+  if ($("settings_outbound_proxy_source").value !== "pool") return;
+  const selected = $("settings_outbound_proxy_pool_mode").value === "selected";
+  $("settings_outbound_proxy_id").style.display = selected ? "block" : "none";
+}
+
+function currentRegisterProxyValue() {
+  if ($("proxy_source").value !== "pool") return $("proxy").value.trim();
+  if ($("proxy_pool_mode").value === "selected") {
+    const id = $("proxy_id").value;
+    const item = (proxyPoolCache || []).find((row) => row.id === id);
+    return item ? (item.url || "") : "";
+  }
+  return "";
+}
+
+function currentOutboundProxyTestPayload() {
+  if ($("settings_outbound_proxy_source").value === "pool") {
+    if ($("settings_outbound_proxy_pool_mode").value === "selected") {
+      return { proxy_id: $("settings_outbound_proxy_id").value };
+    }
+    const enabled = (proxyPoolCache || []).filter((item) => item.enabled !== false);
+    if (!enabled.length) return { outbound_proxy: "" };
+    const item = enabled[Math.floor(Math.random() * enabled.length)];
+    return { proxy_id: item.id, outbound_proxy: item.url };
+  }
+  return { outbound_proxy: $("settings_outbound_proxy").value.trim() };
+}
+
+async function loadProxyPool() {
+  const data = await api("/api/proxy-pool");
+  proxyPoolCache = data.proxies || [];
+  const total = data.total || proxyPoolCache.length;
+  const enabled = data.enabled ?? proxyPoolCache.filter((item) => item.enabled !== false).length;
+  $("proxyPoolSummary").textContent = `共 ${total} 条，启用 ${enabled} 条`;
+  renderProxyPoolList(proxyPoolCache);
+  refreshProxySelects();
+  return data;
+}
+
+function renderProxyPoolList(proxies) {
+  const box = $("proxyPoolList");
+  if (!box) return;
+  if (!proxies.length) {
+    box.innerHTML = `<div class="empty">代理池为空。在上方文本框粘贴代理，一行一个后点击“批量添加”。</div>`;
+    return;
+  }
+  box.innerHTML = proxies.map((item) => `
+    <div class="proxy-pool-item" data-id="${escapeAttr(item.id)}">
+      <label style="display:inline-flex;align-items:center;gap:6px;width:auto">
+        <input type="checkbox" ${item.enabled !== false ? "checked" : ""} onchange="toggleProxyPoolItem('${escapeAttr(item.id)}', this.checked)" style="width:auto">
+        启用
+      </label>
+      <div>
+        <code title="${escapeAttr(item.url || "")}">${escapeAttr(item.display || item.url || "")}</code>
+        <div class="meta">成功 ${item.success_count || 0} / 失败 ${item.fail_count || 0}${item.last_error ? ` · 最近错误: ${escapeAttr(item.last_error)}` : ""}</div>
+      </div>
+      <div class="actions">
+        <button class="secondary" onclick="testProxyPoolItem('${escapeAttr(item.id)}')">检测</button>
+        <button class="danger" onclick="deleteProxyPoolItem('${escapeAttr(item.id)}')">删除</button>
+      </div>
+    </div>
+  `).join("");
+}
+
+async function addProxyPoolBatch() {
+  const textValue = $("proxyPoolBatchText").value;
+  if (!textValue.trim()) return showError("请先粘贴代理列表，一行一个");
+  const resultBox = $("proxyPoolResult");
+  resultBox.style.display = "block";
+  resultBox.className = "notice";
+  resultBox.textContent = "正在导入代理...";
+  try {
+    const data = await api("/api/proxy-pool", {
+      method: "POST",
+      body: JSON.stringify({
+        text: textValue,
+        replace: $("proxyPoolReplace").checked
+      })
+    });
+    $("proxyPoolBatchText").value = "";
+    $("proxyPoolReplace").checked = false;
+    await loadProxyPool();
+    const errText = (data.errors || []).length ? `；错误 ${(data.errors || []).length} 条` : "";
+    resultBox.textContent = `导入完成：新增 ${data.added || 0} 条，跳过重复 ${data.skipped_duplicates || 0} 条${errText}，当前共 ${data.total || 0} 条`;
+    resultBox.className = (data.errors || []).length ? "notice warn" : "notice ok";
+    if ((data.errors || []).length) {
+      resultBox.textContent += "\n" + (data.errors || []).slice(0, 8).join("\n");
+    }
+  } catch (error) {
+    resultBox.textContent = `导入失败：${error instanceof Error ? error.message : String(error)}`;
+    resultBox.className = "notice bad";
+  }
+}
+
+async function deleteProxyPoolItem(id) {
+  if (!await _showConfirm("确认删除这条代理？")) return;
+  await api("/api/proxy-pool", { method: "DELETE", body: JSON.stringify({ ids: [id] }) });
+  await loadProxyPool();
+}
+
+async function clearProxyPool() {
+  if (!await _showConfirm("确认清空整个代理池？此操作不可恢复。")) return;
+  await api("/api/proxy-pool/clear", { method: "POST", body: "{}" });
+  await loadProxyPool();
+}
+
+async function toggleProxyPoolItem(id, enabled) {
+  await api("/api/proxy-pool/update", {
+    method: "POST",
+    body: JSON.stringify({ id, enabled: Boolean(enabled) })
+  });
+  await loadProxyPool();
+}
+
+async function testProxyPoolItem(id) {
+  const resultBox = $("proxyPoolResult");
+  resultBox.style.display = "block";
+  resultBox.className = "notice";
+  resultBox.textContent = "正在检测代理...";
+  try {
+    const data = await api("/api/proxy-pool/test", {
+      method: "POST",
+      body: JSON.stringify({ proxy_id: id })
+    });
+    if (data.ok) {
+      resultBox.textContent = `代理可用：出口 IP ${data.ip || "-"}，耗时 ${data.elapsed_ms || 0}ms`;
+      resultBox.className = "notice ok";
+    } else {
+      resultBox.textContent = `代理检测失败：${data.error || `HTTP ${data.status_code || "-"}`}，耗时 ${data.elapsed_ms || 0}ms`;
+      resultBox.className = "notice bad";
+    }
+    await loadProxyPool();
+  } catch (error) {
+    resultBox.textContent = `代理检测失败：${error instanceof Error ? error.message : String(error)}`;
+    resultBox.className = "notice bad";
+  }
+}
+
 function settingsBody() {
   return {
     outbound_proxy: $("settings_outbound_proxy").value.trim(),
+    outbound_proxy_source: $("settings_outbound_proxy_source").value,
+    outbound_proxy_id: $("settings_outbound_proxy_id").value,
+    outbound_proxy_pool_mode: $("settings_outbound_proxy_pool_mode").value,
     flaresolverr_enabled: $("settings_flaresolverr_enabled").checked,
     flaresolverr_url: $("settings_flaresolverr_url").value.trim(),
     flaresolverr_timeout_seconds: Number($("settings_flaresolverr_timeout_seconds").value || 60),
@@ -1036,6 +1298,9 @@ async function saveRegister() {
     total: Number($("total").value || 1),
     threads: Number($("threads").value || 1),
     proxy: $("proxy").value,
+    proxy_source: $("proxy_source").value,
+    proxy_pool_mode: $("proxy_pool_mode").value,
+    proxy_id: $("proxy_id").value,
     target_quota: Number($("target_quota").value || 1),
     target_available: Number($("target_available").value || 1),
     check_interval: Number($("check_interval").value || 5),
@@ -1058,6 +1323,10 @@ async function loadSettings() {
   const data = await api("/api/settings");
   settingsCache = data.settings || {};
   $("settings_outbound_proxy").value = settingsCache.outbound_proxy || "";
+  $("settings_outbound_proxy_source").value = settingsCache.outbound_proxy_source || "custom";
+  $("settings_outbound_proxy_pool_mode").value = settingsCache.outbound_proxy_pool_mode || "selected";
+  fillProxySelect($("settings_outbound_proxy_id"), settingsCache.outbound_proxy_id || "", true);
+  onOutboundProxySourceChange();
   $("settings_flaresolverr_enabled").checked = Boolean(settingsCache.flaresolverr_enabled);
   $("settings_flaresolverr_url").value = settingsCache.flaresolverr_url || "";
   $("settings_flaresolverr_timeout_seconds").value = settingsCache.flaresolverr_timeout_seconds || 60;
@@ -1069,6 +1338,7 @@ async function loadSettings() {
   $("settings_cpa_secret_key").value = settingsCache.cpa_secret_key || "";
   renderCliproxyUploadTargets(settingsCache.cliproxy_upload_targets || []);
   renderCpaUrls();
+  await loadProxyPool();
 }
 async function saveSettings() {
   const data = await api("/api/settings", { method: "POST", body: JSON.stringify(settingsBody()) });
@@ -1110,7 +1380,7 @@ async function testProxy() {
   try {
     const data = await api("/api/settings/test-proxy", {
       method: "POST",
-      body: JSON.stringify({ outbound_proxy: $("settings_outbound_proxy").value.trim() })
+      body: JSON.stringify(currentOutboundProxyTestPayload())
     });
     if (data.ok) {
       resultBox.textContent = `代理可用：出口 IP ${data.ip || "-"}，耗时 ${data.elapsed_ms}ms`;
@@ -1143,7 +1413,7 @@ async function testFlaresolverr() {
       body: JSON.stringify({
         flaresolverr_url: flaresolverrUrl,
         target_url: $("settings_flaresolverr_test_target").value.trim() || "https://auth.openai.com/",
-        proxy: $("proxy").value.trim(),
+        proxy: currentRegisterProxyValue(),
         timeout_seconds: Number($("settings_flaresolverr_timeout_seconds").value || 60)
       })
     });
@@ -1192,7 +1462,7 @@ async function copyCpaExample() {
 });
 document.addEventListener("input", (event) => { if (event.target && event.target.closest && event.target.closest(".provider")) updateMailJson(); });
 document.addEventListener("change", (event) => { if (event.target && event.target.closest && event.target.closest(".provider")) updateMailJson(); });
-["mode", "total", "threads", "proxy", "target_quota", "target_available", "check_interval"].forEach((id) => {
+["mode", "total", "threads", "proxy", "proxy_source", "proxy_pool_mode", "proxy_id", "target_quota", "target_available", "check_interval"].forEach((id) => {
   document.addEventListener("input", (event) => { if (event.target && event.target.id === id) setRegisterDirty(true); });
   document.addEventListener("change", (event) => { if (event.target && event.target.id === id) setRegisterDirty(true); });
 });

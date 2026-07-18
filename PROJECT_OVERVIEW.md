@@ -143,6 +143,7 @@ docker compose up -d --build
 | `data/accounts.json` | 账号池，包含 access token、refresh token、邮箱、额度、状态等信息 |
 | `data/register.json` | 注册任务配置、邮箱 Provider 配置、统计信息 |
 | `data/ddg_aliases.json` | DuckDuckGo 邮箱别名使用记录 |
+| `data/proxy_pool.json` | IP 代理池，支持 http/socks5 批量导入与启用管理 |
 
 注意：不要把 `config.json`、`data/accounts.json`、`data/register.json` 提交到仓库或公开分享。
 

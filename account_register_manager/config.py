@@ -67,8 +67,36 @@ class Config:
         return bool(self.data.get("auto_remove_rate_limited_accounts", False))
 
     @property
+    def outbound_proxy_source(self) -> str:
+        value = str(self.data.get("outbound_proxy_source") or "custom").strip().lower()
+        return value if value in {"custom", "pool"} else "custom"
+
+    @property
+    def outbound_proxy_id(self) -> str:
+        return str(self.data.get("outbound_proxy_id") or "").strip()
+
+    @property
+    def outbound_proxy_pool_mode(self) -> str:
+        value = str(self.data.get("outbound_proxy_pool_mode") or "selected").strip().lower()
+        return value if value in {"selected", "random", "round_robin"} else "selected"
+
+    @property
     def outbound_proxy(self) -> str:
-        return str(self.data.get("outbound_proxy") or "").strip()
+        return self.resolve_outbound_proxy()
+
+    def resolve_outbound_proxy(self) -> str:
+        custom = str(self.data.get("outbound_proxy") or "").strip()
+        if self.outbound_proxy_source != "pool":
+            return custom
+        from account_register_manager.proxy_pool_service import proxy_pool_service
+
+        try:
+            return proxy_pool_service.pick(
+                mode=self.outbound_proxy_pool_mode,
+                proxy_id=self.outbound_proxy_id,
+            )
+        except RuntimeError:
+            return ""
 
     @property
     def flaresolverr_enabled(self) -> bool:
@@ -111,7 +139,10 @@ class Config:
 
     def get_public_settings(self) -> dict[str, Any]:
         return {
-            "outbound_proxy": self.outbound_proxy,
+            "outbound_proxy": str(self.data.get("outbound_proxy") or "").strip(),
+            "outbound_proxy_source": self.outbound_proxy_source,
+            "outbound_proxy_id": self.outbound_proxy_id,
+            "outbound_proxy_pool_mode": self.outbound_proxy_pool_mode,
             "flaresolverr_enabled": self.flaresolverr_enabled,
             "flaresolverr_url": self.flaresolverr_url,
             "flaresolverr_timeout_seconds": self.flaresolverr_timeout_seconds,
@@ -128,6 +159,9 @@ class Config:
         next_data = dict(self.data)
         for key in (
             "outbound_proxy",
+            "outbound_proxy_source",
+            "outbound_proxy_id",
+            "outbound_proxy_pool_mode",
             "flaresolverr_enabled",
             "flaresolverr_url",
             "flaresolverr_timeout_seconds",
@@ -140,7 +174,22 @@ class Config:
             "cliproxy_upload_targets",
         ):
             if key in updates:
-                next_data[key] = normalize_upload_targets(updates[key]) if key == "cliproxy_upload_targets" else updates[key]
+                value = updates[key]
+                if key == "cliproxy_upload_targets":
+                    value = normalize_upload_targets(value)
+                elif key == "outbound_proxy_source":
+                    value = str(value or "custom").strip().lower()
+                    if value not in {"custom", "pool"}:
+                        value = "custom"
+                elif key == "outbound_proxy_pool_mode":
+                    value = str(value or "selected").strip().lower()
+                    if value not in {"selected", "random", "round_robin"}:
+                        value = "selected"
+                elif key == "outbound_proxy_id":
+                    value = str(value or "").strip()
+                elif key == "outbound_proxy":
+                    value = str(value or "").strip()
+                next_data[key] = value
         self.data = next_data
         CONFIG_FILE.write_text(json.dumps(self.data, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
         return self.get_public_settings()

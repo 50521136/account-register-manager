@@ -20,6 +20,8 @@ It is not deployed and nothing is started automatically.
 - `account_register_manager/register/`: extracted registration worker and mail providers
 - `data/accounts.json`: generated account pool storage
 - `data/register.json`: generated registration settings
+- data/proxy_pool.json: IP proxy pool (http/socks5 batch import)
+- ccount_register_manager/proxy_pool_service.py: proxy pool storage and selection
 
 ## Local Run
 

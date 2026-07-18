@@ -33,13 +33,16 @@ config = {
         "providers": [],
     },
     "proxy": "",
+    "proxy_source": "custom",
+    "proxy_pool_mode": "random",
+    "proxy_id": "",
     "total": 10,
     "threads": 3,
 }
 register_config_file = DATA_DIR / "register.json"
 try:
     saved_config = read_json_object(register_config_file, name="register.json")
-    config.update({key: saved_config[key] for key in ("mail", "proxy", "total", "threads") if key in saved_config})
+    config.update({key: saved_config[key] for key in ("mail", "proxy", "proxy_source", "proxy_pool_mode", "proxy_id", "total", "threads") if key in saved_config})
 except Exception:
     pass
 
@@ -1240,9 +1243,21 @@ class PlatformRegistrar:
         }
 
 
+def _resolve_worker_proxy() -> str:
+    source = str(config.get("proxy_source") or "custom").strip().lower()
+    if source != "pool":
+        return str(config.get("proxy") or "").strip()
+    from account_register_manager.proxy_pool_service import proxy_pool_service
+
+    return proxy_pool_service.pick(
+        mode=str(config.get("proxy_pool_mode") or "random"),
+        proxy_id=str(config.get("proxy_id") or "").strip(),
+    )
+
+
 def worker(index: int) -> dict:
     start = time.time()
-    registrar = PlatformRegistrar(config["proxy"])
+    registrar = PlatformRegistrar(_resolve_worker_proxy())
     try:
         step(index, "任务启动")
         result = registrar.register(index)
