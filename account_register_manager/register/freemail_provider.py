@@ -10,6 +10,7 @@ from account_register_manager.register.mail_provider import (
     _extract_content,
     _next_domain,
     _parse_received_at,
+    _primary_secret,
 )
 
 
@@ -26,7 +27,7 @@ class FreeMailProvider(BaseMailProvider):
         if not api_base:
             raise RuntimeError("FreeMail 需要配置 API Base")
         self.api_base = api_base
-        self.admin_token = str(entry.get("admin_token") or entry.get("api_key") or "").strip()
+        self.admin_token = _primary_secret(entry.get("admin_token") or entry.get("api_key"))
         if not self.admin_token:
             raise RuntimeError("FreeMail 需要配置 Admin Token")
         self.domains = [str(item).strip() for item in (entry.get("domain") or []) if str(item).strip()]

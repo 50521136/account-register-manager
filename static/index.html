@@ -394,15 +394,15 @@ const providerDefaults = {
   xunmail: { type: "xunmail", enable: true, email: "", mail_password: "", client_id: "", refresh_token: "" }
 };
 const providerNotes = {
-  tempmail_lol: "需要 API Key；Domain 可留空使用服务默认域名，也可一行一个域名。",
+  tempmail_lol: "支持一行一个 API Key；Domain 可留空使用服务默认域名，也可一行一个域名。",
   cloudmail_gen: "需要 CloudMail URL、管理员邮箱和管理员密码；Domain/Subdomain 支持多行轮换。",
   cloudflare_temp_email: "需要 API Base 和 Admin Password；Domain 一行一个。",
-  moemail: "需要 API Base、API Key 和 Domain。",
+  moemail: "需要 API Base 和 Domain；API Key 支持一行一个。",
   inbucket: "适合本地/自建 Inbucket；需要 API Base 和基础域名，可开启随机子域名。",
-  duckmail: "需要 API Key；Default Domain 默认 duckmail.sbs。",
-  freemail: "适配 idinging/freemail；需要 API Base 和根管理员 JWT Token。Domain 可留空并使用 Domain Index。",
-  gptmail: "需要 API Key；Default Domain 可选。",
-  yyds_mail: "需要 API Base 和 API Key；可配置 Domain、Subdomain、Wildcard。",
+  duckmail: "API Key 支持一行一个；Default Domain 默认 duckmail.sbs。",
+  freemail: "适配 idinging/freemail；需要 API Base，Admin Token 支持一行一个。Domain 可留空并使用 Domain Index。",
+  gptmail: "API Key 支持一行一个；Default Domain 可选。",
+  yyds_mail: "需要 API Base；API Key 支持一行一个；可配置 Domain、Subdomain、Wildcard。",
   ddg_mail: "DDG 邮箱别名 + CF 收件箱转发模式；需要 DDG Token 和 CF Inbox JWT。",
   xunmail: "微软邮箱接码；需要 email、client_id、refresh_token。"
 };
@@ -855,7 +855,11 @@ function providerField(name, label, value = "", type = "text") {
 }
 function providerListField(name, label, value = []) {
   const text = Array.isArray(value) ? value.join("\n") : String(value || "");
-  return `<label>${label}<textarea data-field="${name}" data-list="1" placeholder="一行一个，或用逗号分隔">${text}</textarea></label>`;
+  return `<label>${label}<textarea data-field="${name}" data-list="1" placeholder="一行一个，或用逗号分隔">${text.replaceAll("&", "&amp;").replaceAll("<", "&lt;")}</textarea></label>`;
+}
+function providerKeyField(name, label, value = "") {
+  const text = Array.isArray(value) ? value.join("\n") : String(value || "");
+  return `<label>${label}<textarea data-field="${name}" data-keys="1" placeholder="一行一个 API Key" style="min-height:96px">${text.replaceAll("&", "&amp;").replaceAll("<", "&lt;")}</textarea></label>`;
 }
 function providerCheck(name, label, checked = false) {
   return `<label style="display:inline-flex;align-items:center;gap:8px"><input data-field="${name}" type="checkbox" ${checked ? "checked" : ""}>${label}</label>`;
@@ -873,9 +877,9 @@ function providerHtml(provider, index) {
   if (["cloudmail_gen", "cloudflare_temp_email", "moemail", "inbucket", "yyds_mail", "freemail"].includes(type)) fields += providerField("api_base", type === "cloudmail_gen" ? "CloudMail URL" : "API Base", provider.api_base);
   if (type === "cloudmail_gen") fields += providerField("admin_email", "管理员邮箱", provider.admin_email) + providerField("admin_password", "管理员密码", provider.admin_password) + providerField("email_prefix", "邮箱前缀", provider.email_prefix);
   if (["cloudflare_temp_email"].includes(type)) fields += providerField("admin_password", "Admin Password", provider.admin_password);
-  if (["tempmail_lol", "moemail", "duckmail", "gptmail", "yyds_mail"].includes(type)) fields += providerField("api_key", "API Key", provider.api_key);
+  if (["tempmail_lol", "moemail", "duckmail", "gptmail", "yyds_mail"].includes(type)) fields += providerKeyField("api_key", "API Key", provider.api_key);
   if (["duckmail", "gptmail"].includes(type)) fields += providerField("default_domain", "Default Domain", provider.default_domain);
-  if (type === "freemail") fields += providerField("admin_token", "Admin Token", provider.admin_token, "password") + providerListField("domain", "Domain 列表", provider.domain) + providerField("domain_index", "Domain Index", provider.domain_index ?? 0, "number") + providerField("random_length", "随机前缀长度", provider.random_length ?? 10, "number") + providerField("message_limit", "邮件查询数量", provider.message_limit ?? 20, "number");
+  if (type === "freemail") fields += providerKeyField("admin_token", "Admin Token", provider.admin_token) + providerListField("domain", "Domain 列表", provider.domain) + providerField("domain_index", "Domain Index", provider.domain_index ?? 0, "number") + providerField("random_length", "随机前缀长度", provider.random_length ?? 10, "number") + providerField("message_limit", "邮件查询数量", provider.message_limit ?? 20, "number");
   if (["cloudmail_gen", "cloudflare_temp_email", "tempmail_lol", "moemail", "inbucket", "yyds_mail"].includes(type)) fields += providerListField("domain", type === "inbucket" ? "基础域名列表" : "Domain 列表", provider.domain);
   if (type === "cloudmail_gen") fields += providerListField("subdomain", "Subdomain 列表", provider.subdomain);
   if (type === "inbucket") fields += providerCheck("random_subdomain", "启用随机子域名", provider.random_subdomain ?? true);
@@ -900,6 +904,7 @@ function readProviderElement(el) {
     const key = field.dataset.field;
     if (field.type === "checkbox") provider[key] = field.checked;
     else if (field.dataset.list) provider[key] = field.value.split(/[\n,]/).map((item) => item.trim()).filter(Boolean);
+    else if (field.dataset.keys) provider[key] = field.value.split(/\r?\n/).map((item) => item.trim()).filter(Boolean).join("\n");
     else provider[key] = field.value.trim();
   });
   return provider;

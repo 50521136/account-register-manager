@@ -173,6 +173,93 @@ def patch_mail_provider(path: Path) -> None:
         '        provider_ref = f"{t}:{stable_id}" if stable_id else f"{t}#{idx}"\n'
         '        result.append({**item, "type": t, "provider_ref": provider_ref, "label": label})',
     )
+
+    if "_MULTI_SECRET_FIELDS" not in text:
+        import re as _re
+
+        multi_entries = """_MULTI_SECRET_FIELDS = {
+    "tempmail_lol": "api_key",
+    "moemail": "api_key",
+    "duckmail": "api_key",
+    "gptmail": "api_key",
+    "yyds_mail": "api_key",
+    "freemail": "admin_token",
+    "donemail": "admin_key",
+    "done_mail": "admin_key",
+}
+
+
+def _split_secret_values(value: object) -> list[str]:
+    if isinstance(value, list):
+        return [str(item).strip() for item in value if str(item).strip()]
+    text = str(value or "").replace(chr(13) + chr(10), chr(10)).replace(chr(13), chr(10))
+    if not text.strip():
+        return []
+    if chr(10) in text:
+        return [line.strip() for line in text.split(chr(10)) if line.strip()]
+    return [text.strip()]
+
+
+def _primary_secret(value: object) -> str:
+    secrets = _split_secret_values(value)
+    return secrets[0] if secrets else ""
+
+
+def _provider_secret_values(item: dict, provider_type: str) -> list[str]:
+    field = _MULTI_SECRET_FIELDS.get(provider_type)
+    if not field:
+        return []
+    raw = item.get(field)
+    if provider_type == "freemail" and not str(raw or "").strip():
+        raw = item.get("api_key")
+    if provider_type in {"donemail", "done_mail"} and not str(raw or "").strip():
+        raw = item.get("api_key") or item.get("admin_password")
+    secrets = _split_secret_values(raw)
+    return secrets or [""]
+
+
+def _entries(mail_config: dict) -> list[dict]:
+    result: list[dict] = []
+    counters: dict[str, int] = {}
+    for item in mail_config.get("providers") or []:
+        if not isinstance(item, dict):
+            continue
+        t = str(item.get("type") or "").strip()
+        if not t:
+            continue
+        stable_id = str(item.get("id") or item.get("provider_id") or "").strip()
+        secret_field = _MULTI_SECRET_FIELDS.get(t)
+        variants = _provider_secret_values(item, t) if secret_field else [None]
+        for secret_index, secret in enumerate(variants, start=1):
+            expanded = {**item, "type": t}
+            if secret_field is not None:
+                expanded[secret_field] = secret
+                if t == "freemail":
+                    expanded["admin_token"] = secret
+                elif t in {"donemail", "done_mail"}:
+                    expanded["admin_key"] = secret
+                else:
+                    expanded["api_key"] = secret
+            cnt = counters.get(t, 0) + 1
+            counters[t] = cnt
+            idx = len(result) + 1
+            label = f"DDG-{cnt}" if t == "ddg_mail" else f"{t}#{idx}"
+            if secret_field is not None and len(variants) > 1:
+                provider_ref = f"{t}:{stable_id}:{secret_index}" if stable_id else f"{t}#{idx}"
+            else:
+                provider_ref = f"{t}:{stable_id}" if stable_id else f"{t}#{idx}"
+            result.append({**expanded, "provider_ref": provider_ref, "label": label})
+    return result
+"""
+        text2, n = _re.subn(
+            r"def _entries\(mail_config: dict\) -> list\[dict\]:\n(?:.*\n)*?    return result\n",
+            multi_entries,
+            text,
+            count=1,
+        )
+        if n:
+            text = text2
+
     path.write_text(text, encoding="utf-8", newline="\n")
 
 
